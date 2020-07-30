@@ -43,6 +43,7 @@ object FlightProject {
 
 
   def main(args: Array[String]) {
+    val dataDir = args(0)
     val conf: SparkConf = new SparkConf().setAppName("FlightProject")
     implicit val sc: SparkContext = new SparkContext(conf)
     sc.setLogLevel("ERROR")
@@ -51,9 +52,9 @@ object FlightProject {
 
     val year = "2017"
     val month = "{01,1}"
-    val weatherFiles = s"/user/vm.guerramoran/flights_data/${year}${month}hourly.txt"
-    val flightFiles = s"/user/vm.guerramoran/flights_data/On_Time_Reporting_Carrier_On_Time_Performance_(1987_present)_${year}_${month}.csv"
-    val airportCodesFile = s"/user/vm.guerramoran/flights_data/airport_codes_map.txt"
+    val weatherFiles = dataDir + s"/${year}${month}hourly.txt"
+    val flightFiles = dataDir + s"/On_Time_Reporting_Carrier_On_Time_Performance_(1987_present)_${year}_${month}.csv"
+    val airportCodesFile = dataDir + s"/airport_codes_map.txt"
 
     var weather = spark.read.format("csv")
       .option("header", "true")
