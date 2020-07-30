@@ -2,3 +2,4 @@ project/*
 target/*
 sync.sh
 data/*
+.idea/*
