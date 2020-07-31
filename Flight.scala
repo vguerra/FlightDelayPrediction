@@ -84,8 +84,17 @@ object FlightProject {
     flightsDf = flightsDf.withColumn("D2", (col("WeatherDelay") > 0.0 && col("ArrDelay") >= lit(threshold)) || (col("NasDelay") >= lit(threshold) && !col("NasDelay").isNull))
     flightsDf = flightsDf.withColumn("D3", (col("ArrDelay") >= lit(threshold) && (col("WeatherDelay") > 0.0 || col("NasDelay") > 0.0)))
     flightsDf = flightsDf.withColumn("D4", col("ArrDelay") >= lit(threshold))
+    flightsDf.persist()
 
-    flightsDf.show(100)
+    val label = "D2"
+    val negativeSampleRate = 0.33
+    val positivesDf = flightsDf.filter(col(label))
+    val negativesDf = flightsDf.filter(!col(label)).sample(negativeSampleRate)
+    val sampledFlightsdf = positivesDf.union(negativesDf)
+    println(sampledFlightsdf)
+
+    weather.show()
+    println(weather.count)
 
     spark.stop()
   }
