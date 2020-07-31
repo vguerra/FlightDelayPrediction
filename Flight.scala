@@ -87,8 +87,8 @@ object FlightProject {
       .load(weatherFiles)
     val mapAirportUdf = udf(mapAirport(wbanToAirport) _)
     weatherDf = weatherDf
-      .withColumn("airport", mapAirportUdf(col("WBAN")))
-      .filter(!col("airport").isNull)
+      .withColumn("Airport", mapAirportUdf(col("WBAN")))
+      .filter(!col("Airport").isNull)
 
     skyConditions.foreach { c =>
       val parseSkyConditionUdf = udf(parseSkyCondition(c) _)
@@ -115,15 +115,13 @@ object FlightProject {
     flightsDf = flightsDf.withColumn("D4", col("ArrDelay") >= lit(threshold))
     flightsDf.persist()
 
+    // negative subsampling sampling
     val label = "D2"
     val negativeSampleRate = 0.33
     val positivesDf = flightsDf.filter(col(label))
     val negativesDf = flightsDf.filter(!col(label)).sample(negativeSampleRate)
-    val sampledFlightsdf = positivesDf.union(negativesDf)
-    println(sampledFlightsdf)
+    flightsDf = positivesDf.union(negativesDf)
 
-    weather.show()
-    println(weather.count)
 
     spark.stop()
   }
