@@ -41,6 +41,9 @@ object FlightProject {
     }
   }
 
+  def mapAirport(mapping: Map[String, String])(wban: String): Option[String] = {
+    mapping.get(wban)
+  }
 
   def main(args: Array[String]) {
     val dataDir = args(0)
@@ -55,11 +58,37 @@ object FlightProject {
     val weatherFiles = dataDir + s"/${year}${month}hourly.txt"
     val flightFiles = dataDir + s"/On_Time_Reporting_Carrier_On_Time_Performance_(1987_present)_${year}_${month}.csv"
     val airportCodesFile = dataDir + s"/airport_codes_map.txt"
+    val stationFiles = dataDir + s"/${year}${month}station.txt"
 
-    var weather = spark.read.format("csv")
+    // get wban/airport mapping from station file
+    val stationDf = spark.read.format("csv")
+      .option("delimiter", "|")
+      .option("header", "true")
+      .load(stationFiles)
+      .select("WBAN", "CallSign")
+      .na.drop()
+    val wbanToAirport = stationDf
+      .collect()
+      .map(r => (r.getString(0) -> r.getString(1)))
+      .toMap
+
+    // get wban/airport mapping from precomputed file
+    val wbanToAirportDf = spark.read.format("csv")
+      .option("delimiter", "|")
+      .option("header", "true")
+      .load(airportCodesFile)
+    val wbanToAirport = wbanToAirportDf
+      .map(row => (row.getString(0), row.getString(1)))
+      .collect()
+      .toMap
+
+    var weatherDf = spark.read.format("csv")
       .option("header", "true")
       .load(weatherFiles)
-    weather = weather.select("SkyCondition", "WeatherType")
+    val mapAirportUdf = udf(mapAirport(wbanToAirport) _)
+    weatherDf = weatherDf
+      .withColumn("airport", mapAirportUdf(col("WBAN")))
+      .filter(!col("airport").isNull)
 
     skyConditions.foreach { c =>
       val parseSkyConditionUdf = udf(parseSkyCondition(c) _)
