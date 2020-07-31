@@ -9,7 +9,7 @@ import org.apache.spark.ml.classification._
 import org.apache.spark.ml.feature._
 import org.apache.spark.mllib.evaluation.BinaryClassificationMetrics
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.functions.{udf, col}
+import org.apache.spark.sql.functions.{udf, col, lit}
 
 
 object FlightProject {
@@ -70,7 +70,22 @@ object FlightProject {
       val parseWeatherTypeUdf = udf(parseWeatherType(w) _)
       weather = weather.withColumn(s"WeatherTypes.${w}", parseWeatherTypeUdf(col("WeatherType")))
     }
-    weather.show(100)
+
+    var flightsDf = spark.read.format("csv")
+      .option("header", "true")
+      .load(flightFiles)
+
+    // ignore flights diverted of cancelled
+    flightsDf = flightsDf.filter((col("Cancelled") === 0.0 && col("Diverted") === 0.0))
+
+    // add labels
+    val threshold = 15
+    flightsDf = flightsDf.withColumn("D1", col("CarrierDelay") === 0.0 && col("SecurityDelay") === 0.0 && col("LateAircraftDelay") === 0.0 && col("ArrDelay") >= lit(threshold))
+    flightsDf = flightsDf.withColumn("D2", (col("WeatherDelay") > 0.0 && col("ArrDelay") >= lit(threshold)) || (col("NasDelay") >= lit(threshold) && !col("NasDelay").isNull))
+    flightsDf = flightsDf.withColumn("D3", (col("ArrDelay") >= lit(threshold) && (col("WeatherDelay") > 0.0 || col("NasDelay") > 0.0)))
+    flightsDf = flightsDf.withColumn("D4", col("ArrDelay") >= lit(threshold))
+
+    flightsDf.show(100)
 
     spark.stop()
   }
