@@ -9,7 +9,8 @@ import org.apache.spark.ml.classification._
 import org.apache.spark.ml.feature._
 import org.apache.spark.mllib.evaluation.BinaryClassificationMetrics
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.functions.{udf, col, lit}
+import org.apache.spark.sql.functions.{udf, col, lit, unix_timestamp}
+import scala.collection.mutable
 
 
 object FlightProject {
@@ -45,6 +46,23 @@ object FlightProject {
     mapping.get(wban)
   }
 
+  case class WeatherData(skyCondition: String, weatherType: String)
+  val weatherDataSchema = new StructType()
+    .add("skyCondition", StringType)
+    .add("weatherType", StringType)
+  def findWeatherData(ts: mutable.WrappedArray[Long], skyCondition: mutable.WrappedArray[String], weatherType: mutable.WrappedArray[String], targetTs: Long): WeatherData = {
+    if (ts == null) {
+      WeatherData("", "")
+    } else {
+      (0 until ts.length)
+        .filter(ts(_) <= targetTs)
+        .sortBy(idx => -ts(idx))
+        .headOption
+        .map(idx => WeatherData(skyCondition(idx), weatherType(idx)))
+        .getOrElse(WeatherData("", ""))
+    }
+  }
+
   def main(args: Array[String]) {
     val dataDir = args(0)
     val conf: SparkConf = new SparkConf().setAppName("FlightProject")
@@ -60,17 +78,28 @@ object FlightProject {
     val airportCodesFile = dataDir + s"/airport_codes_map.txt"
     val stationFiles = dataDir + s"/${year}${month}station.txt"
 
-    // get wban/airport mapping from station file
-    val stationDf = spark.read.format("csv")
-      .option("delimiter", "|")
+    var flightsDf = spark.read.format("csv")
       .option("header", "true")
-      .load(stationFiles)
-      .select("WBAN", "CallSign")
-      .na.drop()
-    val wbanToAirport = stationDf
-      .collect()
-      .map(r => (r.getString(0) -> r.getString(1)))
-      .toMap
+      .load(flightFiles)
+
+    // ignore flights diverted of cancelled
+    flightsDf = flightsDf.filter((col("Cancelled") === 0.0 && col("Diverted") === 0.0))
+
+    // get the set of airport
+    val airports = (flightsDf.select(col("Origin")).collect ++ flightsDf.select(col("Dest")).collect).map(r => r.getString(0)).toSet
+
+    // // get wban/airport mapping from station file
+    // val stationDf = spark.read.format("csv")
+    //   .option("delimiter", "|")
+    //   .option("header", "true")
+    //   .load(stationFiles)
+    //   .select("WBAN", "CallSign")
+    //   .na.drop()
+    // val wbanToAirport = stationDf
+    //   .collect()
+    //   .map(r => (r.getString(0) -> r.getString(1)))
+    //   .filter(kv => airports.contains(kv._2))
+    //   .toMap
 
     // get wban/airport mapping from precomputed file
     val wbanToAirportDf = spark.read.format("csv")
@@ -82,30 +111,33 @@ object FlightProject {
       .collect()
       .toMap
 
+    // read weather data
     var weatherDf = spark.read.format("csv")
       .option("header", "true")
       .load(weatherFiles)
+
+    // get airport from wban in the weather data
     val mapAirportUdf = udf(mapAirport(wbanToAirport) _)
     weatherDf = weatherDf
       .withColumn("Airport", mapAirportUdf(col("WBAN")))
       .filter(!col("Airport").isNull)
 
-    skyConditions.foreach { c =>
-      val parseSkyConditionUdf = udf(parseSkyCondition(c) _)
-      weather = weather.withColumn(s"SkyCondition.${c}", parseSkyConditionUdf(col("skyCondition")))
-    }
+    // skyConditions.foreach { c =>
+    //   val parseSkyConditionUdf = udf(parseSkyCondition(c) _)
+    //   weatherDf = weatherDf.withColumn(s"SkyCondition.${c}", parseSkyConditionUdf(col("skyCondition")))
+    // }
 
-    weatherTypes.foreach { w =>
-      val parseWeatherTypeUdf = udf(parseWeatherType(w) _)
-      weather = weather.withColumn(s"WeatherTypes.${w}", parseWeatherTypeUdf(col("WeatherType")))
-    }
+    // weatherTypes.foreach { w =>
+    //   val parseWeatherTypeUdf = udf(parseWeatherType(w) _)
+    //   weatherDf = weatherDf.withColumn(s"WeatherTypes.${w}", parseWeatherTypeUdf(col("WeatherType")))
+    // }
 
-    var flightsDf = spark.read.format("csv")
-      .option("header", "true")
-      .load(flightFiles)
-
-    // ignore flights diverted of cancelled
-    flightsDf = flightsDf.filter((col("Cancelled") === 0.0 && col("Diverted") === 0.0))
+    // parse timestamps for weather
+    weatherDf = weatherDf
+      .withColumn("Time", lpad(col("Time"), 4, "0"))
+      .withColumn("Ts", concat(col("date"), col("Time")))
+      .withColumn("Ts", unix_timestamp(col("Ts"), "yyyyMMddHHmm"))
+      .withColumn("Day", (col("Ts") / 86400).cast(IntegerType))
 
     // add labels
     val threshold = 15
@@ -119,9 +151,40 @@ object FlightProject {
     val label = "D2"
     val negativeSampleRate = 0.33
     val positivesDf = flightsDf.filter(col(label))
-    val negativesDf = flightsDf.filter(!col(label)).sample(negativeSampleRate)
+    val negativesDf = flightsDf.filter(!col(label)).sample(negativeSampleRate, seed=12345)
     flightsDf = positivesDf.union(negativesDf)
 
+    // parse timestamps for flights
+    flightsDf = flightsDf
+      .withColumn("DepTime", lpad(col("DepTime"), 4, "0"))
+      .withColumn("DepTime", when(col("DepTime").equalTo("2400"), "2359").otherwise(col("DepTime")))
+      .withColumn("DepTs", unix_timestamp(concat(col("FlightDate"), col("DepTime")), "yyyy-MM-ddHHmm"))
+      .withColumn("DepDay", (col("DepTs") / 86400).cast(IntegerType))
+      .withColumn("ArrTime", lpad(col("ArrTime"), 4, "0"))
+      .withColumn("ArrTime", when(col("ArrTime").equalTo("2400"), "2359").otherwise(col("ArrTime")))
+      .withColumn("ArrTs", unix_timestamp(concat(col("FlightDate"), col("ArrTime")), "yyyy-MM-ddHHmm"))
+      .withColumn("ArrDay", (col("ArrTs") / 86400).cast(IntegerType))
+
+    weatherDf = weatherDf
+      .union(weatherDf.withColumn("day", col("day") + 1))
+    weatherDf = weatherDf
+      .select("Airport", "Day", "Ts", "Skycondition", "WeatherType")
+      .groupBy(col("Day"), col("Airport"))
+      .agg(
+        collect_list("Ts").as("Ts"),
+        collect_list("SkyCondition").as("SkyCondition"),
+        collect_list("WeatherType").as("WeatherType"))
+    flightsDf = flightsDf.select("DepTs", "DepDay", "ArrTs", "ArrDay", "Origin", "Dest")
+    var joinedDf = flightsDf.join(weatherDf, col("DepDay") === col("Day") && col("Origin") === col("Airport"), "left")
+    // println(joinedDf.count)
+
+    val findWeatherDataUdf = udf(findWeatherData _, weatherDataSchema)
+    joinedDf = joinedDf.withColumn("WeatherData", findWeatherDataUdf(col("Ts"), col("SkyCondition"), col("WeatherType"), col("DepTs")))
+    // joinedDf = joinedDf.select("WeatherData")
+    joinedDf = joinedDf.persist()
+    println(joinedDf.count)
+    println(joinedDf.filter(col("WeatherData.skycondition") === "" && col("WeatherData.weatherType") === "").count)
+    joinedDf.show(100)
 
     spark.stop()
   }
