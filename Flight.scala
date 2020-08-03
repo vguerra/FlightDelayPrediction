@@ -46,22 +46,46 @@ object FlightProject {
     mapping.get(wban)
   }
 
-  case class WeatherData(skyCondition: String, weatherType: String)
-  val weatherDataSchema = new StructType()
-    .add("skyCondition", StringType)
-    .add("weatherType", StringType)
-  def findWeatherData(ts: mutable.WrappedArray[Long], skyCondition: mutable.WrappedArray[String], weatherType: mutable.WrappedArray[String], targetTs: Long): WeatherData = {
-    if (ts == null) {
-      WeatherData("", "")
-    } else {
-      (0 until ts.length)
-        .filter(ts(_) <= targetTs)
-        .sortBy(idx => -ts(idx))
-        .headOption
-        .map(idx => WeatherData(skyCondition(idx), weatherType(idx)))
-        .getOrElse(WeatherData("", ""))
+  // case class WeatherData(skyCondition: String, weatherType: String)
+  // val weatherDataSchema = new StructType()
+  //   .add("skyCondition", StringType)
+  //   .add("weatherType", StringType)
+  // def findWeatherData(ts: mutable.WrappedArray[Long], skyCondition: mutable.WrappedArray[String], weatherType: mutable.WrappedArray[String], targetTs: Long): WeatherData = {
+  //   if (ts == null) {
+  //     WeatherData("", "")
+  //   } else {
+  //     (0 until ts.length)
+  //       .filter(ts(_) <= targetTs)
+  //       .sortBy(idx => -ts(idx))
+  //       .headOption
+  //       .map(idx => WeatherData(skyCondition(idx), weatherType(idx)))
+  //       .getOrElse(WeatherData("", ""))
+  //   }
+  // }
+
+  case class WeatherData(ts: Long, skyCondition: String, weatherType: String)
+  val weatherDataSchema = ArrayType(StructType(Array(
+          StructField("ts", LongType),
+          StructField("skyCondition", StringType),
+          StructField("weatherType", StringType)
+  )))
+
+  def fillWeatherData(minTs: Long, maxTs: Long)(ts: mutable.WrappedArray[Long], skyCondition: mutable.WrappedArray[String], weatherType: mutable.WrappedArray[String]): Seq[WeatherData] = {
+    val sortedIdx = (0 until ts.length)
+      .sortBy(ts(_))
+    var currentSkyCondition = ""
+    var currentWeatherType = ""
+    var idx = 0
+    (minTs until maxTs by 3600).map{ currentTs =>
+      while (idx + 1 < ts.length && ts(sortedIdx(idx+1)) <= currentTs) {
+        idx = idx + 1
+      }
+      currentSkyCondition = skyCondition(idx)
+      currentWeatherType = weatherType(idx)
+      WeatherData(currentTs, currentSkyCondition, currentWeatherType)
     }
   }
+
 
   def main(args: Array[String]) {
     val dataDir = args(0)
@@ -87,8 +111,8 @@ object FlightProject {
       .filter((col("Cancelled") === 0.0 && col("Diverted") === 0.0))
       .repartition(200)
 
-    // get the set of airport
-    val airports = (flightsDf.select(col("Origin")).collect ++ flightsDf.select(col("Dest")).collect).map(r => r.getString(0)).toSet
+    // // get the set of airport
+    // val airports = (flightsDf.select(col("Origin")).collect ++ flightsDf.select(col("Dest")).collect).map(r => r.getString(0)).toSet
 
     // // get wban/airport mapping from station file
     // val stationDf = spark.read.format("csv")
@@ -168,24 +192,59 @@ object FlightProject {
       .withColumn("ArrTs", unix_timestamp(concat(col("FlightDate"), col("ArrTime")), "yyyy-MM-ddHHmm"))
       .withColumn("ArrDay", (col("ArrTs") / 86400).cast(IntegerType))
 
-    weatherDf = weatherDf
-      .union(weatherDf.withColumn("day", col("day") + 1))
-    weatherDf = weatherDf
-      .select("Airport", "Day", "Ts", "Skycondition", "WeatherType")
-      .groupBy(col("Day"), col("Airport"))
+    // weatherDf = weatherDf
+    //   .union(weatherDf.withColumn("day", col("day") + 1))
+    // weatherDf = weatherDf
+    //   .select("Airport", "Day", "Ts", "Skycondition", "WeatherType")
+    //   .groupBy(col("Day"), col("Airport"))
+    //   .agg(
+    //     collect_list("Ts").as("Ts"),
+    //     collect_list("SkyCondition").as("SkyCondition"),
+    //     collect_list("WeatherType").as("WeatherType"))
+    // flightsDf = flightsDf.select("DepTs", "DepDay", "ArrTs", "ArrDay", "Origin", "Dest")
+    // var joinedDf = flightsDf.join(weatherDf, col("DepDay") === col("Day") && col("Origin") === col("Airport"), "left")
+
+    // val findWeatherDataUdf = udf(findWeatherData _, weatherDataSchema)
+    // joinedDf = joinedDf.withColumn("WeatherData", findWeatherDataUdf(col("Ts"), col("SkyCondition"), col("WeatherType"), col("DepTs")))
+    // // joinedDf = joinedDf.select("WeatherData")
+    // joinedDf = joinedDf.persist()
+    // println(joinedDf.filter(col("WeatherData.skycondition") === "" && col("WeatherData.weatherType") === "").count)
+
+    // // group weather per station
+    // //    output one line per hour
+
+    // // join flights with weather of origin
+    // //    one row per (flight, hour)
+    // //    group by flight with collect_list
+
+    // // join flights with weather of arrival
+
+    // println(weatherDf.count)
+    // // println(flightsDf.count())
+    // println(joinedDf.count)
+    // // flightsDf.show()
+
+    val groupedWeatherDf = weatherDf
+      .groupBy(col("Airport"))
       .agg(
         collect_list("Ts").as("Ts"),
         collect_list("SkyCondition").as("SkyCondition"),
         collect_list("WeatherType").as("WeatherType"))
-    flightsDf = flightsDf.select("DepTs", "DepDay", "ArrTs", "ArrDay", "Origin", "Dest")
-    var joinedDf = flightsDf.join(weatherDf, col("DepDay") === col("Day") && col("Origin") === col("Airport"), "left")
 
-    val findWeatherDataUdf = udf(findWeatherData _, weatherDataSchema)
-    joinedDf = joinedDf.withColumn("WeatherData", findWeatherDataUdf(col("Ts"), col("SkyCondition"), col("WeatherType"), col("DepTs")))
-    // joinedDf = joinedDf.select("WeatherData")
-    joinedDf = joinedDf.persist()
-    println(joinedDf.count)
-    println(joinedDf.filter(col("WeatherData.skycondition") === "" && col("WeatherData.weatherType") === "").count)
+    println("weatherDf.count", weatherDf.count)
+
+    val minTs = 3600 * ((flightsDf.agg(min(col("DepTs"))).collect()(0)(0).asInstanceOf[Long] - 12 * 3600) / 3600)
+    val maxTs = 3600 * (flightsDf.agg(max(col("ArrTs"))).collect()(0)(0).asInstanceOf[Long] / 3600)
+    println("minTs", minTs)
+    println("maxTs", maxTs)
+
+    val fillWeatherDataUdf = udf(fillWeatherData(minTs, maxTs) _, weatherDataSchema)
+    val filledWeatherDf = groupedWeatherDf
+      .withColumn("weatherData", fillWeatherDataUdf(col("Ts"), col("SkyCondition"), col("WeatherType")))
+      .withColumn("weatherData", explode(col("weatherData")))
+      .select("Airport", "weatherData.*")
+    println("filledWeatherDf.count", filledWeatherDf.count)
+    filledWeatherDf.show()
 
     spark.stop()
   }
