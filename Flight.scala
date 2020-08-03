@@ -65,14 +65,14 @@ object FlightProject {
 
   def main(args: Array[String]) {
     val dataDir = args(0)
+    val year = args(1)
+    val month = args(2)
     val conf: SparkConf = new SparkConf().setAppName("FlightProject")
     implicit val sc: SparkContext = new SparkContext(conf)
     sc.setLogLevel("ERROR")
     implicit val spark: SparkSession = SparkSession.builder.config(conf).getOrCreate()
     import spark.implicits._
 
-    val year = "2017"
-    val month = "{01,1}"
     val weatherFiles = dataDir + s"/${year}${month}hourly.txt"
     val flightFiles = dataDir + s"/On_Time_Reporting_Carrier_On_Time_Performance_(1987_present)_${year}_${month}.csv"
     val airportCodesFile = dataDir + s"/airport_codes_map.txt"
@@ -83,7 +83,9 @@ object FlightProject {
       .load(flightFiles)
 
     // ignore flights diverted of cancelled
-    flightsDf = flightsDf.filter((col("Cancelled") === 0.0 && col("Diverted") === 0.0))
+    flightsDf = flightsDf
+      .filter((col("Cancelled") === 0.0 && col("Diverted") === 0.0))
+      .repartition(200)
 
     // get the set of airport
     val airports = (flightsDf.select(col("Origin")).collect ++ flightsDf.select(col("Dest")).collect).map(r => r.getString(0)).toSet
@@ -115,6 +117,7 @@ object FlightProject {
     var weatherDf = spark.read.format("csv")
       .option("header", "true")
       .load(weatherFiles)
+      .repartition(200)
 
     // get airport from wban in the weather data
     val mapAirportUdf = udf(mapAirport(wbanToAirport) _)
@@ -176,7 +179,6 @@ object FlightProject {
         collect_list("WeatherType").as("WeatherType"))
     flightsDf = flightsDf.select("DepTs", "DepDay", "ArrTs", "ArrDay", "Origin", "Dest")
     var joinedDf = flightsDf.join(weatherDf, col("DepDay") === col("Day") && col("Origin") === col("Airport"), "left")
-    // println(joinedDf.count)
 
     val findWeatherDataUdf = udf(findWeatherData _, weatherDataSchema)
     joinedDf = joinedDf.withColumn("WeatherData", findWeatherDataUdf(col("Ts"), col("SkyCondition"), col("WeatherType"), col("DepTs")))
@@ -184,7 +186,6 @@ object FlightProject {
     joinedDf = joinedDf.persist()
     println(joinedDf.count)
     println(joinedDf.filter(col("WeatherData.skycondition") === "" && col("WeatherData.weatherType") === "").count)
-    joinedDf.show(100)
 
     spark.stop()
   }
