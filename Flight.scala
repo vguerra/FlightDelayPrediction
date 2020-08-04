@@ -109,6 +109,7 @@ object FlightProject {
     // ignore flights diverted of cancelled
     flightsDf = flightsDf
       .filter((col("Cancelled") === 0.0 && col("Diverted") === 0.0))
+      .withColumn("FlightSeqId", monotonically_increasing_id())
       .repartition(200)
 
     // // get the set of airport
@@ -244,7 +245,20 @@ object FlightProject {
       .withColumn("weatherData", explode(col("weatherData")))
       .select("Airport", "weatherData.*")
     println("filledWeatherDf.count", filledWeatherDf.count)
-    filledWeatherDf.show()
+
+    val nbWeatherDataHours = 12
+    val flightDepWeatherDf = flightsDf.join(filledWeatherDf,
+      filledWeatherDf.col("Airport") === flightsDf.col("Origin") &&
+        filledWeatherDf.col("Ts").between(
+          flightsDf.col("DepTs") - nbWeatherDataHours * 3600, flightsDf.col("DepTs")))
+      .groupBy(col("FlightSeqId"))
+      .agg(min(col("Year")),
+        collect_list(struct(col("Ts"), col("SkyCondition"), col("WeatherType"))).alias("DepWeatherInfoStructs"))
+      .withColumn("weatherInfoDep", sort_array(col("DepWeatherInfoStructs"), true))
+      .persist()
+
+    println("flightDepWeatherDf.count", flightDepWeatherDf.count)
+    flightDepWeatherDf.show(100)
 
     spark.stop()
   }
