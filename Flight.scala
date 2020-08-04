@@ -270,7 +270,18 @@ object FlightProject {
         filledWeatherDf.col("Ts").between(
           flightsDf.col("DepTs") - nbWeatherDataHours * 3600, flightsDf.col("DepTs")))
       .groupBy(col("FlightSeqId"))
-      .agg(min(col("Year")),
+      .agg(
+        min(col("FlightSeqId")).as("FlightSeqId"),
+        min(col("Origin")).as("Origin"),
+        min(col("Dest")).as("Dest"),
+        min(col("DepTs")).as("DepTs"),
+        min(col("DepDay")).as("DepDay"),
+        min(col("ArrTs")).as("ArrTs"),
+        min(col("ArrDay")).as("ArrDay"),
+        min(col("D1")).as("D1"),
+        min(col("D2")).as("D2"),
+        min(col("D3")).as("D3"),
+        min(col("D4")).as("D4"),
         collect_list(struct(col("Ts"), col("SkyCondition"), col("WeatherType"))).alias("DepWeatherInfoStructs"))
       .withColumn("weatherInfoDep", sort_array(col("DepWeatherInfoStructs"), true))
       .persist()
