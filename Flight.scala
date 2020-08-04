@@ -271,7 +271,6 @@ object FlightProject {
           flightsDf.col("DepTs") - nbWeatherDataHours * 3600, flightsDf.col("DepTs")))
       .groupBy(col("FlightSeqId"))
       .agg(
-        min(col("FlightSeqId")).as("FlightSeqId"),
         min(col("Origin")).as("Origin"),
         min(col("Dest")).as("Dest"),
         min(col("DepTs")).as("DepTs"),
@@ -284,10 +283,36 @@ object FlightProject {
         min(col("D4")).as("D4"),
         collect_list(struct(col("Ts"), col("SkyCondition"), col("WeatherType"))).alias("DepWeatherInfoStructs"))
       .withColumn("weatherInfoDep", sort_array(col("DepWeatherInfoStructs"), true))
+      .drop(col("DepWeatherInfoStructs"))
       .persist()
 
     println("flightDepWeatherDf.count", flightDepWeatherDf.count)
-    flightDepWeatherDf.show(100)
+    flightDepWeatherDf.show(5)
+
+    val flightArrWeatherDf = flightDepWeatherDf.join(filledWeatherDf,
+      filledWeatherDf.col("Airport") === flightDepWeatherDf.col("Dest") &&
+        filledWeatherDf.col("Ts").between(
+          flightDepWeatherDf.col("ArrTs") - nbWeatherDataHours * 3600, flightDepWeatherDf.col("ArrTs")))
+      .groupBy(col("FlightSeqId"))
+      .agg(
+        min(col("Origin")).as("Origin"),
+        min(col("Dest")).as("Dest"),
+        min(col("DepTs")).as("DepTs"),
+        min(col("DepDay")).as("DepDay"),
+        min(col("ArrTs")).as("ArrTs"),
+        min(col("ArrDay")).as("ArrDay"),
+        min(col("D1")).as("D1"),
+        min(col("D2")).as("D2"),
+        min(col("D3")).as("D3"),
+        min(col("D4")).as("D4"),
+        min(col("weatherInfoDep")).as("weatherInfoDep"),
+        collect_list(struct(col("Ts"), col("SkyCondition"), col("WeatherType"))).alias("ArrWeatherInfoStructs"))
+      .withColumn("weatherInfoArr", sort_array(col("ArrWeatherInfoStructs"), true))
+      .drop(col("ArrWeatherInfoStructs"))
+      .persist()
+
+    println("flightArrWeatherDf.count", flightArrWeatherDf.count)
+    flightArrWeatherDf.show(5)
 
     spark.stop()
   }
