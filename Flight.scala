@@ -1,5 +1,3 @@
-// spark-submit --master yarn --conf spark.driver.cores=12 --class "FlightProject" target/scala-2.11/flightproject_2.11-1.0.jar
-
 import org.apache.spark._
 import org.apache.spark.sql._
 import org.apache.spark.sql.functions._
@@ -87,10 +85,30 @@ object FlightProject {
   }
 
 
+  def usage(): Unit = {
+    println("usage: spark-submit [SPARK_CONF] --class \"FlightProject\" JAR_FILE [--dataDir DATA_DIR] [--year YEAR] [--month MONTH]")
+  }
+
+
   def main(args: Array[String]) {
-    val dataDir = args(0)
-    val year = args(1)
-    val month = args(2)
+    var dataDir: String = "data/"
+    var year: String = "2017"
+    var month: String = "{01,1}"
+    if (args.length % 2 == 1) {
+      usage()
+      return
+    }
+    args.sliding(2, 2).toList.collect {
+      case Array("--dataDir", dataDirArg: String) => dataDir = dataDirArg
+      case Array("--year", yearArg: String) => year = yearArg
+      case Array("--month", monthArg: String) => month = monthArg
+      case Array(_, _) => {
+        usage()
+        return
+      }
+    }
+
+
     val conf: SparkConf = new SparkConf().setAppName("FlightProject")
     implicit val sc: SparkContext = new SparkContext(conf)
     sc.setLogLevel("ERROR")

@@ -8,6 +8,6 @@ spark-submit --verbose --master yarn \
     --num-executors 100 \
     --executor-memory 16g \
     --class FlightProject "${DIR}/target/scala-2.11/flightproject_2.11-1.0.jar" \
-    "/user/vm.guerramoran/flights_data/" \
-    "{2009,2010,2011,2012,2013}" \
-    "*"
+    --dataDir "/user/vm.guerramoran/flights_data/" \
+    --year "{2009,2010,2011,2012,2013}" \
+    --month "*"
