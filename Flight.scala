@@ -40,6 +40,29 @@ object FlightProject {
     }
   }
 
+  def splitData(preparedDF: DataFrame, splitTrainingRatio: Double): (DataFrame, DataFrame) = {
+    val Array(trainingDataDF, testDataDF) = preparedDF
+      .randomSplit(Array(splitTrainingRatio, 1.0 - splitTrainingRatio))
+    (trainingDataDF, testDataDF)
+  }
+
+  def trainModel(trainingDataDF: DataFrame): ClassificationModel[_, _] = {
+    val classifier = new LogisticRegression().setMaxIter(10)
+    classifier.fit(trainingDataDF)
+  }
+
+  def evaluateModel(testDataDF: DataFrame, model: ClassificationModel[_, _]) = {
+    val predictions = model.transform(testDataDF)
+    val getScore = udf((xs: org.apache.spark.ml.linalg.Vector) => xs.toArray(1))
+    val predictionsWithScore = predictions.withColumn("score", getScore(col("probability"))).select("score", "label").rdd.map(x => (x.getDouble(0), x.getDouble(1)))
+    val metrics = new BinaryClassificationMetrics(predictionsWithScore)
+    val (bestThreshold, bestF1Score) = metrics.fMeasureByThreshold.collect().maxBy(_._2)
+    val recall = metrics.recallByThreshold.collect().filter(x => x._1 == bestThreshold)(0)._2
+    val precision = metrics.precisionByThreshold.collect().filter(x => x._1 == bestThreshold)(0)._2
+    println(s"best F-score: ${bestF1Score}, threshold: ${bestThreshold}, precision: ${precision}, recall: ${recall}")
+    println("Area under ROC = " + metrics.areaUnderROC)
+  }
+
   def mapAirport(mapping: Map[String, String])(wban: String): Option[String] = {
     mapping.get(wban)
   }
@@ -123,6 +146,7 @@ object FlightProject {
     var flightsDf = spark.read.format("csv")
       .option("header", "true")
       .load(flightFiles)
+      // .sample(1.0, seed=12345)
 
     // ignore flights diverted of cancelled
     flightsDf = flightsDf
@@ -160,6 +184,7 @@ object FlightProject {
     var weatherDf = spark.read.format("csv")
       .option("header", "true")
       .load(weatherFiles)
+      // .sample(1.0, seed=12345)
       .repartition(200)
 
     // get airport from wban in the weather data
@@ -187,18 +212,12 @@ object FlightProject {
 
     // add labels
     val threshold = 15
-    flightsDf = flightsDf.withColumn("D1", col("CarrierDelay") === 0.0 && col("SecurityDelay") === 0.0 && col("LateAircraftDelay") === 0.0 && col("ArrDelay") >= lit(threshold))
-    flightsDf = flightsDf.withColumn("D2", (col("WeatherDelay") > 0.0 && col("ArrDelay") >= lit(threshold)) || (col("NasDelay") >= lit(threshold) && !col("NasDelay").isNull))
-    flightsDf = flightsDf.withColumn("D3", (col("ArrDelay") >= lit(threshold) && (col("WeatherDelay") > 0.0 || col("NasDelay") > 0.0)))
-    flightsDf = flightsDf.withColumn("D4", col("ArrDelay") >= lit(threshold))
+    flightsDf = flightsDf
+      .withColumn("D1", col("CarrierDelay") === 0.0 && col("SecurityDelay") === 0.0 && col("LateAircraftDelay") === 0.0 && col("ArrDelay") >= lit(threshold))
+      .withColumn("D2", (col("WeatherDelay") > 0.0 && col("ArrDelay") >= lit(threshold)) || (col("NasDelay") >= lit(threshold) && !col("NasDelay").isNull))
+      .withColumn("D3", (col("ArrDelay") >= lit(threshold) && (col("WeatherDelay") > 0.0 || col("NasDelay") > 0.0)))
+      .withColumn("D4", col("ArrDelay") >= lit(threshold))
     flightsDf.persist()
-
-    // negative subsampling sampling
-    val label = "D2"
-    val negativeSampleRate = 0.33
-    val positivesDf = flightsDf.filter(col(label))
-    val negativesDf = flightsDf.filter(!col(label)).sample(negativeSampleRate, seed=12345)
-    flightsDf = positivesDf.union(negativesDf)
 
     // parse timestamps for flights
     flightsDf = flightsDf
@@ -264,7 +283,7 @@ object FlightProject {
       .select("Airport", "weatherData.*")
     println("filledWeatherDf.count", filledWeatherDf.count)
 
-    val nbWeatherDataHours = 12
+    val nbWeatherDataHours = 2
     val flightDepWeatherDf = flightsDf.join(filledWeatherDf,
       filledWeatherDf.col("Airport") === flightsDf.col("Origin") &&
         filledWeatherDf.col("Ts").between(
@@ -289,7 +308,7 @@ object FlightProject {
     println("flightDepWeatherDf.count", flightDepWeatherDf.count)
     flightDepWeatherDf.show(5)
 
-    val flightArrWeatherDf = flightDepWeatherDf.join(filledWeatherDf,
+    val flightWeatherDf = flightDepWeatherDf.join(filledWeatherDf,
       filledWeatherDf.col("Airport") === flightDepWeatherDf.col("Dest") &&
         filledWeatherDf.col("Ts").between(
           flightDepWeatherDf.col("ArrTs") - nbWeatherDataHours * 3600, flightDepWeatherDf.col("ArrTs")))
@@ -311,8 +330,40 @@ object FlightProject {
       .drop(col("ArrWeatherInfoStructs"))
       .persist()
 
-    println("flightArrWeatherDf.count", flightArrWeatherDf.count)
-    flightArrWeatherDf.show(5)
+    println("flightWeatherDf.count", flightWeatherDf.count)
+    flightWeatherDf.show(5)
+
+    // negative subsampling sampling
+    val label = "D2"
+    val negativeSampleRate = 0.33
+    val positivesDf = flightWeatherDf.filter(col(label))
+    val negativesDf = flightWeatherDf.filter(!col(label)).sample(negativeSampleRate, seed=12345)
+    val sampledFlightWeatherDf = positivesDf.union(negativesDf)
+
+    val destIndexer = new StringIndexer()
+      .setInputCol("Dest")
+      .setOutputCol("DestIdx")
+    val assembler = new VectorAssembler()
+      .setHandleInvalid("skip")
+      .setInputCols(Array("DestIdx"))
+      .setOutputCol("featuresVector")
+    val vectorIndexer = new VectorIndexer()
+      .setInputCol("featuresVector")
+      .setOutputCol("features")
+      .setMaxCategories(300)
+    val pipeline = new Pipeline().setStages(Array(destIndexer, assembler, vectorIndexer))
+    val transformedDF = pipeline
+      .fit(flightWeatherDf)
+      .transform(sampledFlightWeatherDf)
+      .select("features", label)
+      .withColumn("label", col("D2").cast(DoubleType))
+    val (trainingDataDF, testDataDF) = splitData(transformedDF, 0.8)
+    trainingDataDF.persist()
+    testDataDF.persist()
+
+    val model = trainModel(trainingDataDF)
+    evaluateModel(trainingDataDF, model)
+    evaluateModel(testDataDF, model)
 
     spark.stop()
   }
