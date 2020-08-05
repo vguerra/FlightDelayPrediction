@@ -96,17 +96,14 @@ object FlightProject {
   def joinDatasets(flightsDf: DataFrame, weatherDf: DataFrame, nbWeatherDataHours: Int): DataFrame = {
     val groupedWeatherDf = weatherDf
       .groupBy(col("Airport"))
-      .agg(
-        collect_list("Ts").as("Ts"),
-        collect_list("SkyCondition").as("SkyCondition"),
-        collect_list("WeatherType").as("WeatherType"))
+      .agg(collect_list(struct(col("Ts"), col("SkyCondition"), col("WeatherType"))).alias("weatherInfo"))
 
     val minTs = 3600 * ((flightsDf.agg(min(col("DepTs"))).collect()(0)(0).asInstanceOf[Long] - 12 * 3600) / 3600)
     val maxTs = 3600 * (flightsDf.agg(max(col("ArrTs"))).collect()(0)(0).asInstanceOf[Long] / 3600)
 
     val fillWeatherDataUdf = udf(fillWeatherData(minTs, maxTs) _, weatherDataSchema)
     val filledWeatherDf = groupedWeatherDf
-      .withColumn("weatherData", fillWeatherDataUdf(col("Ts"), col("SkyCondition"), col("WeatherType")))
+      .withColumn("weatherData", fillWeatherDataUdf(col("weatherInfo")))
       .withColumn("weatherData", explode(col("weatherData")))
       .select("Airport", "weatherData.*")
 
@@ -241,29 +238,28 @@ object FlightProject {
     mapping.get(wban)
   }
 
-  case class WeatherData(ts: Long, skyCondition: String, weatherType: String)
+  case class WeatherData(Ts: Long, SkyCondition: String, WeatherType: String)
   val weatherDataSchema = ArrayType(StructType(Array(
-    StructField("ts", LongType),
-    StructField("skyCondition", StringType),
-    StructField("weatherType", StringType)
+    StructField("Ts", LongType),
+    StructField("SkyCondition", StringType),
+    StructField("WeatherType", StringType)
   )))
 
-  def fillWeatherData(minTs: Long, maxTs: Long)(ts: mutable.WrappedArray[Long], skyCondition: mutable.WrappedArray[String], weatherType: mutable.WrappedArray[String]): Seq[WeatherData] = {
-    val sortedIdx = (0 until ts.length)
-      .sortBy(ts(_))
+  def fillWeatherData(minTs: Long, maxTs: Long)(weatherInfo: mutable.WrappedArray[Row]): Seq[WeatherData] = {
+    val sortedWeatherInfos = weatherInfo.map {
+      case Row(ts: Long, skyCondition: String, weatherType: String) =>
+        WeatherData(ts, skyCondition, weatherType)
+    }.sortBy(_.Ts)
     var currentSkyCondition = ""
     var currentWeatherType = ""
     var idx = 0
-      (minTs until maxTs by 3600).map{ currentTs =>
-        while (idx + 1 < ts.length && ts(sortedIdx(idx+1)) <= currentTs) {
-          idx = idx + 1
-        }
-        currentSkyCondition = skyCondition(idx)
-        currentWeatherType = weatherType(idx)
-        WeatherData(currentTs, currentSkyCondition, currentWeatherType)
+    (minTs until maxTs by 3600).map{ currentTs =>
+      while (idx + 1 < sortedWeatherInfos.length && sortedWeatherInfos(idx+1).Ts <= currentTs) {
+        idx = idx + 1
       }
+      WeatherData(currentTs, sortedWeatherInfos(idx).SkyCondition, sortedWeatherInfos(idx).WeatherType)
+    }
   }
-
 
   def usage(): Unit = {
     println("usage: spark-submit [SPARK_CONF] --class \"FlightProject\" JAR_FILE [--dataDir DATA_DIR] [--year YEAR] [--month MONTH] [--nbWeatherHours NB_WEATHER_HOURS] [--label LABEL] [--threshold THRESHOLD] [--negativeSamplingRate NEGATIVE_SAMPLING_RATE]")
