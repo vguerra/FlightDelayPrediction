@@ -266,7 +266,7 @@ object FlightProject {
 
 
   def usage(): Unit = {
-    println("usage: spark-submit [SPARK_CONF] --class \"FlightProject\" JAR_FILE [--dataDir DATA_DIR] [--year YEAR] [--month MONTH]")
+    println("usage: spark-submit [SPARK_CONF] --class \"FlightProject\" JAR_FILE [--dataDir DATA_DIR] [--year YEAR] [--month MONTH] [--nbWeatherHours NB_WEATHER_HOURS] [--label LABEL] [--threshold THRESHOLD] [--negativeSamplingRate NEGATIVE_SAMPLING_RATE]")
   }
 
 
@@ -274,6 +274,10 @@ object FlightProject {
     var dataDir: String = "data/"
     var year: String = "2017"
     var month: String = "{01,1}"
+    var nbWeatherHours: Int = 12
+    var label = "D2"
+    var threshold = 15
+    var negativeSamplingRate = 0.33
     if (args.length % 2 == 1) {
       usage()
       return
@@ -282,6 +286,10 @@ object FlightProject {
       case Array("--dataDir", dataDirArg: String) => dataDir = dataDirArg
       case Array("--year", yearArg: String) => year = yearArg
       case Array("--month", monthArg: String) => month = monthArg
+      case Array("--nbWeatherHours", nbWeatherHoursArg: String) => nbWeatherHours = nbWeatherHoursArg.toInt
+      case Array("--label", labelArg: String) => label = labelArg
+      case Array("--threshold", thresholdArg: String) => threshold = thresholdArg.toInt
+      case Array("--negativeSamplingRate", negativeSamplingRateArg: String) => negativeSamplingRate = negativeSamplingRateArg.toDouble
       case Array(_, _) => {
         usage()
         return
@@ -309,14 +317,11 @@ object FlightProject {
     // val airports = (flightsDf.select(col("Origin")).collect ++ flightsDf.select(col("Dest")).collect).map(r => r.getString(0)).toSet
     // weatherDf = mapWbanToAirportFromStationFiles(weatherDf, airportCodesFile)
 
-    flightsDf = addLabels(flightsDf, 15).persist()
+    flightsDf = addLabels(flightsDf, threshold).persist()
 
-    val nbWeatherDataHours = 2
-    val flightWeatherDf = joinDatasets(flightsDf, weatherDf, nbWeatherDataHours).persist()
+    val flightWeatherDf = joinDatasets(flightsDf, weatherDf, nbWeatherHours).persist()
 
-    val label = "D2"
-    val negativeSampleRate = 0.33
-    val sampledFlightWeatherDf = subsampleDataset(flightWeatherDf, label, negativeSampleRate).persist()
+    val sampledFlightWeatherDf = subsampleDataset(flightWeatherDf, label, negativeSamplingRate).persist()
 
     val transformedDF = transformDataset(flightWeatherDf, sampledFlightWeatherDf, label)
 
