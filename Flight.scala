@@ -84,6 +84,28 @@ object FlightProject {
       .withColumn("Ts", concat(col("date"), col("Time")))
       .withColumn("Ts", unix_timestamp(col("Ts"), "yyyyMMddHHmm"))
 
+    weatherDf = weatherDf.select(
+      col("Ts"),
+      col("WBAN"),
+      col("SkyCondition"),
+      col("WeatherType"),
+      col("Visibility").cast(DoubleType),
+      col("WindSpeed").cast(DoubleType),
+      col("RelativeHumidity").cast(DoubleType),
+      col("WindDirection").cast(DoubleType),
+      col("StationPressure").cast(DoubleType))
+
+    // handle missing values
+    weatherDf = weatherDf.na.fill("", Seq(
+      "SkyCondition",
+      "WeatherType"))
+    weatherDf = weatherDf.na.fill(-1, Seq(
+      "Visibility",
+      "WindSpeed",
+      "RelativeHumidity",
+      "WindDirection",
+      "StationPressure"))
+
     weatherDf.repartition(200)
   }
 
@@ -132,7 +154,16 @@ object FlightProject {
   def joinDatasets(flightsDf: DataFrame, weatherDf: DataFrame, nbWeatherDataHours: Int): DataFrame = {
     val groupedWeatherDf = weatherDf
       .groupBy(col("Airport"))
-      .agg(collect_list(struct(col("Ts"), col("SkyCondition"), col("WeatherType"))).alias("weatherInfo"))
+      .agg(collect_list(struct(
+        col("Ts"),
+        col("SkyCondition"),
+        col("WeatherType"),
+        col("Visibility"),
+        col("WindSpeed"),
+        col("RelativeHumidity"),
+        col("WindDirection"),
+        col("StationPressure"))
+      ).alias("weatherInfo"))
 
     val minTs = 3600 * ((flightsDf.agg(min(col("DepTs"))).collect()(0)(0).asInstanceOf[Long] - 12 * 3600) / 3600)
     val maxTs = 3600 * (flightsDf.agg(max(col("ArrTs"))).collect()(0)(0).asInstanceOf[Long] / 3600)
@@ -162,7 +193,15 @@ object FlightProject {
         min(col("D2")).as("D2"),
         min(col("D3")).as("D3"),
         min(col("D4")).as("D4"),
-        collect_list(struct(col("Ts"), col("SkyCondition"), col("WeatherType"))).alias("DepWeatherInfoStructs"))
+        collect_list(struct(
+          col("Ts"),
+          col("SkyCondition"),
+          col("WeatherType"),
+          col("Visibility"),
+          col("WindSpeed"),
+          col("RelativeHumidity"),
+          col("WindDirection"),
+          col("StationPressure"))).alias("DepWeatherInfoStructs"))
       .withColumn("weatherInfoDep", sort_array(col("DepWeatherInfoStructs"), true))
       .drop(col("DepWeatherInfoStructs"))
 
@@ -186,7 +225,15 @@ object FlightProject {
         min(col("D3")).as("D3"),
         min(col("D4")).as("D4"),
         min(col("weatherInfoDep")).as("weatherInfoDep"),
-        collect_list(struct(col("Ts"), col("SkyCondition"), col("WeatherType"))).alias("ArrWeatherInfoStructs"))
+        collect_list(struct(
+          col("Ts"),
+          col("SkyCondition"),
+          col("WeatherType"),
+          col("Visibility"),
+          col("WindSpeed"),
+          col("RelativeHumidity"),
+          col("WindDirection"),
+          col("StationPressure"))).alias("ArrWeatherInfoStructs"))
       .withColumn("weatherInfoArr", sort_array(col("ArrWeatherInfoStructs"), true))
       .drop(col("ArrWeatherInfoStructs"))
 
@@ -199,7 +246,54 @@ object FlightProject {
     positivesDf.union(negativesDf)
   }
 
-  def transformDataset(flightWeatherDf: DataFrame, sampledFlightWeatherDf: DataFrame, label: String): DataFrame = {
+  val skyConditions = Seq("FEW", "SCT", "BKN", "OVC")
+  def parseSkyCondition(skyCondition: String)(skyConditionString: String): Int = {
+    val default = 999
+    if (skyConditionString == "M") {
+      default
+    } else {
+      val tokens = skyConditionString.split(" ")
+      tokens.find(t => t.length >= 6 && t.substring(0, 3) == skyCondition).map(t => t.substring(3, 6).toInt).getOrElse(default)
+    }
+  }
+
+  val weatherTypes = Seq("VC", "MI", "PR", "BC", "DR", "BL", "SH", "TS", "FZ", "RA", "DZ", "SN", "SG", "IC", "PL", "GR", "GS", "UP", "FG", "VA", "BR", "HZ", "DU", "FU", "SA", "PY", "SQ", "PO", "DS", "SS", "FC")
+  def parseWeatherType(weatherType: String)(weatherTypeString: String): Int = {
+    val idx = weatherTypeString.indexOfSlice(weatherType)
+    if (idx == -1) {
+      0
+    } else {
+      if (idx != 0 && weatherTypeString(idx - 1) == '-')
+        1
+      else if (idx != 0 && weatherTypeString(idx - 1) == '+')
+        3
+      else
+        2
+    }
+  }
+
+  def transformDataset(flightWeatherDf: DataFrame, sampledFlightWeatherDf: DataFrame, label: String, nbWeatherHours: Int): DataFrame = {
+
+    var df = flightWeatherDf
+
+    Seq("Arr", "Dep").foreach { airport =>
+      (0 until nbWeatherHours).foreach { hour =>
+        skyConditions.foreach { c =>
+          val parseSkyConditionUdf = udf(parseSkyCondition(c) _)
+          df = df.withColumn(s"${airport}_SkyCondition_${hour}_${c}", parseSkyConditionUdf(col(s"weatherInfo${airport}")(hour)("skyCondition")))
+        }
+        weatherTypes.foreach { w =>
+          val parseWeatherTypeUdf = udf(parseWeatherType(w) _)
+          df = df.withColumn(s"${airport}_WeatherTypes_${hour}_${w}", parseWeatherTypeUdf(col(s"weatherInfo${airport}")(hour)("WeatherType")))
+        }
+        df = df.withColumn(s"${airport}_Visibility_${hour}", col(s"weatherInfo${airport}")(hour)("Visibility"))
+        df = df.withColumn(s"${airport}_WindSpeed_${hour}", col(s"weatherInfo${airport}")(hour)("WindSpeed"))
+        df = df.withColumn(s"${airport}_RelativeHumidity_${hour}", col(s"weatherInfo${airport}")(hour)("RelativeHumidity"))
+        df = df.withColumn(s"${airport}_WindDirection_${hour}", col(s"weatherInfo${airport}")(hour)("WindDirection"))
+        df = df.withColumn(s"${airport}_StationPressure_${hour}", col(s"weatherInfo${airport}")(hour)("StationPressure"))
+      }
+    }
+
     val destIndexer = new StringIndexer().setInputCol("Dest").setOutputCol("DestIdx")
     val originIndexer = new StringIndexer().setInputCol("Origin").setOutputCol("OriginIdx")
     val assembler = new VectorAssembler()
@@ -212,7 +306,19 @@ object FlightProject {
         "DayOfWeek",
         "DepSecondOfDay",
         "ArrSecondOfDay",
-        "DayOfYear"))
+        "DayOfYear") ++
+        Seq("Arr", "Dep").flatMap { airport =>
+          (0 until 1).flatMap { hour =>
+            skyConditions.map { c => s"${airport}_SkyCondition_${hour}_${c}" } ++
+            // weathertypes.map { c => s"${airport}_WeatherTypes_${hour}_${c}" } ++
+            Seq(s"${airport}_Visibility_${hour}",
+              s"${airport}_WindSpeed_${hour}",
+              s"${airport}_RelativeHumidity_${hour}",
+              s"${airport}_WindDirection_${hour}",
+              s"${airport}_StationPressure_${hour}")
+          }
+        }
+      )
       .setOutputCol("featuresVector")
     val vectorIndexer = new VectorIndexer()
       .setInputCol("featuresVector")
@@ -220,49 +326,12 @@ object FlightProject {
       .setMaxCategories(300)
     val pipeline = new Pipeline().setStages(Array(destIndexer, originIndexer, assembler, vectorIndexer))
     val transformedDF = pipeline
-      .fit(flightWeatherDf)
-      .transform(sampledFlightWeatherDf)
+      .fit(df)
+      .transform(df)
       .select("features", label)
       .withColumn("label", col(label).cast(DoubleType))
     transformedDF
   }
-
-  // val skyConditions = Seq("FEW", "SCT", "BKN", "OVC")
-  // def parseSkyCondition(skyCondition: String)(skyConditionString: String): Int = {
-  //   val default = 999
-  //   if (skyConditionString == "M") {
-  //     default
-  //   } else {
-  //     val tokens = skyConditionString.split(" ")
-  //     tokens.find(t => t.substring(0, 3) == skyCondition).map(t => t.substring(3, 6).toInt).getOrElse(default)
-  //   }
-  // }
-
-  // val weatherTypes = Seq("VC", "MI", "PR", "BC", "DR", "BL", "SH", "TS", "FZ", "RA", "DZ", "SN", "SG", "IC", "PL", "GR", "GS", "UP", "FG", "VA", "BR", "HZ", "DU", "FU", "SA", "PY", "SQ", "PO", "DS", "SS", "FC")
-  // def parseWeatherType(weatherType: String)(weatherTypeString: String): Int = {
-  //   val default = 0
-  //   val idx = weatherTypeString.indexOfSlice(weatherType)
-  //   if (idx == -1) {
-  //     0
-  //   } else {
-  //     if (idx != 0 && weatherTypeString(idx - 1) == '-')
-  //       1
-  //     else if (idx != 0 && weatherTypeString(idx - 1) == '+')
-  //       3
-  //     else
-  //       2
-  //   }
-  // }
-
-  // skyConditions.foreach { c =>
-  //   val parseSkyConditionUdf = udf(parseSkyCondition(c) _)
-  //   weatherDf = weatherDf.withColumn(s"SkyCondition.${c}", parseSkyConditionUdf(col("skyCondition")))
-  // }
-
-  // weatherTypes.foreach { w =>
-  //   val parseWeatherTypeUdf = udf(parseWeatherType(w) _)
-  //   weatherDf = weatherDf.withColumn(s"WeatherTypes.${w}", parseWeatherTypeUdf(col("WeatherType")))
-  // }
 
   def splitDataset(df: DataFrame, splitTrainingRatio: Double): (DataFrame, DataFrame) = {
     val Array(trainingDataDF, testDataDF) = df
@@ -303,27 +372,63 @@ object FlightProject {
     mapping.get(wban)
   }
 
-  case class WeatherData(Ts: Long, SkyCondition: String, WeatherType: String)
+  case class WeatherData(
+    Ts: Long,
+    SkyCondition: String,
+    WeatherType: String,
+    Visibility: Double,
+    WindSpeed: Double,
+    RelativeHumidity: Double,
+    WindDirection: Double,
+    StationPressure: Double)
   val weatherDataSchema = ArrayType(StructType(Array(
     StructField("Ts", LongType),
     StructField("SkyCondition", StringType),
-    StructField("WeatherType", StringType)
+    StructField("WeatherType", StringType),
+    StructField("Visibility", DoubleType),
+    StructField("WindSpeed", DoubleType),
+    StructField("RelativeHumidity", DoubleType),
+    StructField("WindDirection", DoubleType),
+    StructField("StationPressure", DoubleType)
   )))
 
   def fillWeatherData(minTs: Long, maxTs: Long)(weatherInfo: mutable.WrappedArray[Row]): Seq[WeatherData] = {
     val sortedWeatherInfos = weatherInfo.map {
-      case Row(ts: Long, skyCondition: String, weatherType: String) =>
-        WeatherData(ts, skyCondition, weatherType)
+      case Row(
+        ts: Long,
+        skyCondition: String,
+        weatherType: String,
+        visibility: Double,
+        windSpeed: Double,
+        relativeHumidity: Double,
+        windDirection: Double,
+        stationPressure: Double
+      ) => WeatherData(
+        ts,
+        skyCondition,
+        weatherType,
+        visibility,
+        windSpeed,
+        relativeHumidity,
+        windDirection,
+        stationPressure)
     }.sortBy(_.Ts)
-    var currentSkyCondition = ""
-    var currentWeatherType = ""
     var idx = 0
-    (minTs until maxTs by 3600).map{ currentTs =>
-      while (idx + 1 < sortedWeatherInfos.length && sortedWeatherInfos(idx+1).Ts <= currentTs) {
-        idx = idx + 1
+      (minTs until maxTs by 3600).map{ currentTs =>
+        while (idx + 1 < sortedWeatherInfos.length && sortedWeatherInfos(idx+1).Ts <= currentTs) {
+          idx = idx + 1
+        }
+        val weatherInfo = sortedWeatherInfos(idx)
+        WeatherData(
+          currentTs,
+          weatherInfo.SkyCondition,
+          weatherInfo.WeatherType,
+          weatherInfo.Visibility,
+          weatherInfo.WindSpeed,
+          weatherInfo.RelativeHumidity,
+          weatherInfo.WindDirection,
+          weatherInfo.StationPressure)
       }
-      WeatherData(currentTs, sortedWeatherInfos(idx).SkyCondition, sortedWeatherInfos(idx).WeatherType)
-    }
   }
 
   def usage(): Unit = {
@@ -384,7 +489,7 @@ object FlightProject {
 
     val sampledFlightWeatherDf = subsampleDataset(flightWeatherDf, label, negativeSamplingRate).persist()
 
-    val transformedDF = transformDataset(flightWeatherDf, sampledFlightWeatherDf, label)
+    val transformedDF = transformDataset(flightWeatherDf, sampledFlightWeatherDf, label, nbWeatherHours)
 
     val (trainingDataDF, testDataDF) = splitDataset(transformedDF, 0.8)
     trainingDataDF.persist()
