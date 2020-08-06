@@ -1,3 +1,4 @@
+import ml.dmlc.xgboost4j.scala.spark.XGBoostClassifier
 import org.apache.spark._
 import org.apache.spark.sql._
 import org.apache.spark.sql.functions._
@@ -217,10 +218,22 @@ object FlightProject {
     (trainingDataDF, testDataDF)
   }
 
+  // TODO: Provide a parameter to be able to chose model type to train and extend this method accordinly.
   def trainModel(trainingDataDF: DataFrame): ClassificationModel[_, _] = {
     val classifier = new LogisticRegression().setMaxIter(10)
     classifier.fit(trainingDataDF)
   }
+
+//  def trainModel(trainingDataDF: DataFrame): ClassificationModel[_, _] = {
+//    val xgbParam = Map(
+//      "objective" -> "binary:logistic",
+//      "num_round" -> 5
+//    )
+//    val classifier = new XGBoostClassifier(xgbParam)
+//      .setFeaturesCol("features")
+//      .setLabelCol("label")
+//    classifier.fit(trainingDataDF)
+//  }
 
   def evaluateModel(testDataDF: DataFrame, model: ClassificationModel[_, _]) = {
     val predictions = model.transform(testDataDF)
