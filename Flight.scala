@@ -24,7 +24,7 @@ object FlightProject {
     flightsDf = flightsDf
       .filter((col("Cancelled") === 0.0 && col("Diverted") === 0.0))
 
-    // parse timestamps
+    // compute departure timestamps
     flightsDf = flightsDf
       .withColumn("CRSDepTime", lpad(col("CRSDepTime"), 4, "0"))
       .withColumn("CRSDepTime", when(col("CRSDepTime").equalTo("2400"), "2359").otherwise(col("CRSDepTime")))
@@ -35,6 +35,7 @@ object FlightProject {
       else 0L
     })
 
+    // compute arrival timestamps
     flightsDf = flightsDf
       .withColumn("CRSArrTimeHour", col("CRSArrTime").substr(0, 2))
       .withColumn("CRSArrTimeMinute", col("CRSArrTime").substr(3, 2))
@@ -49,13 +50,14 @@ object FlightProject {
           )
       )
 
+    // select relevant columns
     flightsDf = flightsDf.select(
       monotonically_increasing_id().as("FlightSeqId"),
       col("DepTs"),
       col("ArrTs"),
       col("Origin"),
       col("Dest"),
-      col("DayOfWeek"),
+      col("DayOfWeek").cast(LongType),
       (col("DepTs") % 86400).as("DepSecondOfDay"),
       (col("ArrTs") % 86400).as("ArrSecondOfDay"),
       dayofyear(to_date(col("FlightDate"))).as("DayOfYear"),
@@ -151,6 +153,11 @@ object FlightProject {
         min(col("Dest")).as("Dest"),
         min(col("DepTs")).as("DepTs"),
         min(col("ArrTs")).as("ArrTs"),
+        min(col("DayOfWeek")).as("DayOfWeek"),
+        min(col("DepSecondOfDay")).as("DepSecondOfDay"),
+        min(col("ArrSecondOfDay")).as("ArrSecondOfDay"),
+        min(col("DayOfYear")).as("DayOfYear"),
+        min(col("CRSElapsedTime")).as("CRSElapsedTime"),
         min(col("D1")).as("D1"),
         min(col("D2")).as("D2"),
         min(col("D3")).as("D3"),
@@ -169,6 +176,11 @@ object FlightProject {
         min(col("Dest")).as("Dest"),
         min(col("DepTs")).as("DepTs"),
         min(col("ArrTs")).as("ArrTs"),
+        min(col("DayOfWeek")).as("DayOfWeek"),
+        min(col("DepSecondOfDay")).as("DepSecondOfDay"),
+        min(col("ArrSecondOfDay")).as("ArrSecondOfDay"),
+        min(col("DayOfYear")).as("DayOfYear"),
+        min(col("CRSElapsedTime")).as("CRSElapsedTime"),
         min(col("D1")).as("D1"),
         min(col("D2")).as("D2"),
         min(col("D3")).as("D3"),
@@ -188,18 +200,25 @@ object FlightProject {
   }
 
   def transformDataset(flightWeatherDf: DataFrame, sampledFlightWeatherDf: DataFrame, label: String): DataFrame = {
-    val destIndexer = new StringIndexer()
-      .setInputCol("Dest")
-      .setOutputCol("DestIdx")
+    val destIndexer = new StringIndexer().setInputCol("Dest").setOutputCol("DestIdx")
+    val originIndexer = new StringIndexer().setInputCol("Origin").setOutputCol("OriginIdx")
     val assembler = new VectorAssembler()
       .setHandleInvalid("skip")
-      .setInputCols(Array("DestIdx"))
+      .setInputCols(Array(
+        "DestIdx",
+        "OriginIdx",
+        "DepTs",
+        "ArrTs",
+        "DayOfWeek",
+        "DepSecondOfDay",
+        "ArrSecondOfDay",
+        "DayOfYear"))
       .setOutputCol("featuresVector")
     val vectorIndexer = new VectorIndexer()
       .setInputCol("featuresVector")
       .setOutputCol("features")
       .setMaxCategories(300)
-    val pipeline = new Pipeline().setStages(Array(destIndexer, assembler, vectorIndexer))
+    val pipeline = new Pipeline().setStages(Array(destIndexer, originIndexer, assembler, vectorIndexer))
     val transformedDF = pipeline
       .fit(flightWeatherDf)
       .transform(sampledFlightWeatherDf)
