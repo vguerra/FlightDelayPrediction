@@ -23,16 +23,49 @@ object FlightProject {
     // ignore flights diverted of cancelled
     flightsDf = flightsDf
       .filter((col("Cancelled") === 0.0 && col("Diverted") === 0.0))
-      .withColumn("FlightSeqId", monotonically_increasing_id())
 
     // parse timestamps
     flightsDf = flightsDf
-      .withColumn("DepTime", lpad(col("DepTime"), 4, "0"))
-      .withColumn("DepTime", when(col("DepTime").equalTo("2400"), "2359").otherwise(col("DepTime")))
-      .withColumn("DepTs", unix_timestamp(concat(col("FlightDate"), col("DepTime")), "yyyy-MM-ddHHmm"))
-      .withColumn("ArrTime", lpad(col("ArrTime"), 4, "0"))
-      .withColumn("ArrTime", when(col("ArrTime").equalTo("2400"), "2359").otherwise(col("ArrTime")))
-      .withColumn("ArrTs", unix_timestamp(concat(col("FlightDate"), col("ArrTime")), "yyyy-MM-ddHHmm"))
+      .withColumn("CRSDepTime", lpad(col("CRSDepTime"), 4, "0"))
+      .withColumn("CRSDepTime", when(col("CRSDepTime").equalTo("2400"), "2359").otherwise(col("CRSDepTime")))
+      .withColumn("DepTs", unix_timestamp(concat(col("FlightDate"), col("CRSDepTime")), "yyyy-MM-ddHHmm"))
+
+    val computeNextDayFactor = udf((computedHour: Long, localTimeHour: Long) => {
+      if (math.abs(localTimeHour - computedHour) > 6)  24L * 60L * 60L  // 1 day
+      else 0L
+    })
+
+    flightsDf = flightsDf
+      .withColumn("CRSArrTimeHour", col("CRSArrTime").substr(0, 2))
+      .withColumn("CRSArrTimeMinute", col("CRSArrTime").substr(3, 2))
+      .withColumn("ComputedArrDateTimeHourInSeconds", col("DepTs") + (col("CRSElapsedTime").cast(LongType) * 60L))
+      .withColumn("ArrTs",
+        col("DepTs") +
+          col("CRSArrTimeHour").cast(LongType) * 3600 +
+          col("CRSArrTimeMinute").cast(LongType) * 60 +
+          computeNextDayFactor(
+            hour(col("ComputedArrDateTimeHourInSeconds").cast(TimestampType)).cast(LongType),
+            col("CRSARRTimeHour").cast(LongType)
+          )
+      )
+
+    flightsDf = flightsDf.select(
+      monotonically_increasing_id().as("FlightSeqId"),
+      col("DepTs"),
+      col("ArrTs"),
+      col("Origin"),
+      col("Dest"),
+      col("DayOfWeek"),
+      (col("DepTs") % 86400).as("DepSecondOfDay"),
+      (col("ArrTs") % 86400).as("ArrSecondOfDay"),
+      dayofyear(to_date(col("FlightDate"))).as("DayOfYear"),
+      col("CRSElapsedTime"),
+      col("CarrierDelay"),
+      col("SecurityDelay"),
+      col("LateAircraftDelay"),
+      col("ArrDelay"),
+      col("WeatherDelay"),
+      col("NasDelay"))
 
     flightsDf.repartition(200)
   }
