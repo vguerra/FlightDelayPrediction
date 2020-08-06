@@ -6,7 +6,7 @@ import org.apache.spark.sql.types._
 import org.apache.spark.ml.Pipeline
 import org.apache.spark.ml.classification._
 import org.apache.spark.ml.feature._
-import org.apache.spark.mllib.evaluation.BinaryClassificationMetrics
+import org.apache.spark.mllib.evaluation.{BinaryClassificationMetrics, MulticlassMetrics}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.functions.{col, lit, udf, unix_timestamp}
 
@@ -282,7 +282,10 @@ object FlightProject {
     val recall = metrics.recallByThreshold.collect().filter(x => x._1 == bestThreshold)(0)._2
     val precision = metrics.precisionByThreshold.collect().filter(x => x._1 == bestThreshold)(0)._2
     println(s"best F-score: ${bestF1Score}, threshold: ${bestThreshold}, precision: ${precision}, recall: ${recall}")
-    println("Area under ROC = " + metrics.areaUnderROC)
+    println("Area under ROC: " + metrics.areaUnderROC)
+    val multiclassMetrics = new MulticlassMetrics(predictionsWithScore)
+    println(s"Accuracy: ${multiclassMetrics.accuracy}")
+    println(s"Confusion matrix:\n ${multiclassMetrics.confusionMatrix}")
   }
 
   def mapAirport(mapping: Map[String, String])(wban: String): Option[String] = {
