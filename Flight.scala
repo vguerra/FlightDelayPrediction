@@ -6,9 +6,10 @@ import org.apache.spark.sql.types._
 import org.apache.spark.ml.Pipeline
 import org.apache.spark.ml.classification._
 import org.apache.spark.ml.feature._
-import org.apache.spark.mllib.evaluation.BinaryClassificationMetrics
+import org.apache.spark.mllib.evaluation.{BinaryClassificationMetrics, MulticlassMetrics}
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.functions.{udf, col, lit, unix_timestamp}
+import org.apache.spark.sql.functions.{col, lit, udf, unix_timestamp}
+
 import scala.collection.mutable
 
 
@@ -339,22 +340,26 @@ object FlightProject {
     (trainingDataDF, testDataDF)
   }
 
-  // TODO: Provide a parameter to be able to chose model type to train and extend this method accordinly.
-  def trainModel(trainingDataDF: DataFrame): ClassificationModel[_, _] = {
-    val classifier = new LogisticRegression().setMaxIter(10)
+  def trainModel(trainingDataDF: DataFrame)(implicit modelType: String): ClassificationModel[_, _] = {
+    val classifier = modelType match {
+      case "lr" => new LogisticRegression().setMaxIter(10)
+      case "xgboost" => new XGBoostClassifier(
+        Map("objective" -> "binary:logistic", "num_round" -> 5))
+        .setFeaturesCol("features")
+        .setLabelCol("label")
+      case "gbt" => new GBTClassifier()
+          .setLabelCol("label")
+          .setFeaturesCol("features")
+//          .setMaxBins(300)
+//          .setMaxIter(150)
+//          .setStepSize(0.1)
+//          .setMaxDepth(5)
+      case "dt" => new DecisionTreeClassifier()
+        .setLabelCol("label")
+        .setFeaturesCol("features")
+    }
     classifier.fit(trainingDataDF)
   }
-
-//  def trainModel(trainingDataDF: DataFrame): ClassificationModel[_, _] = {
-//    val xgbParam = Map(
-//      "objective" -> "binary:logistic",
-//      "num_round" -> 5
-//    )
-//    val classifier = new XGBoostClassifier(xgbParam)
-//      .setFeaturesCol("features")
-//      .setLabelCol("label")
-//    classifier.fit(trainingDataDF)
-//  }
 
   def evaluateModel(testDataDF: DataFrame, model: ClassificationModel[_, _]) = {
     val predictions = model.transform(testDataDF)
@@ -365,7 +370,10 @@ object FlightProject {
     val recall = metrics.recallByThreshold.collect().filter(x => x._1 == bestThreshold)(0)._2
     val precision = metrics.precisionByThreshold.collect().filter(x => x._1 == bestThreshold)(0)._2
     println(s"best F-score: ${bestF1Score}, threshold: ${bestThreshold}, precision: ${precision}, recall: ${recall}")
-    println("Area under ROC = " + metrics.areaUnderROC)
+    println("Area under ROC: " + metrics.areaUnderROC)
+    val multiclassMetrics = new MulticlassMetrics(predictionsWithScore)
+    println(s"Accuracy: ${multiclassMetrics.accuracy}")
+    println(s"Confusion matrix:\n ${multiclassMetrics.confusionMatrix}")
   }
 
   def mapAirport(mapping: Map[String, String])(wban: String): Option[String] = {
@@ -432,7 +440,7 @@ object FlightProject {
   }
 
   def usage(): Unit = {
-    println("usage: spark-submit [SPARK_CONF] --class \"FlightProject\" JAR_FILE [--dataDir DATA_DIR] [--year YEAR] [--month MONTH] [--nbWeatherHours NB_WEATHER_HOURS] [--label LABEL] [--threshold THRESHOLD] [--negativeSamplingRate NEGATIVE_SAMPLING_RATE]")
+    println("usage: spark-submit [SPARK_CONF] --class \"FlightProject\" JAR_FILE [--dataDir DATA_DIR] [--year YEAR] [--month MONTH] [--nbWeatherHours NB_WEATHER_HOURS] [--label LABEL] [--threshold THRESHOLD] [--negativeSamplingRate NEGATIVE_SAMPLING_RATE] [--modelType MODEL_TYPE]")
   }
 
 
@@ -444,6 +452,7 @@ object FlightProject {
     var label = "D2"
     var threshold = 15
     var negativeSamplingRate = 0.33
+    implicit var modelType = "lr"
     if (args.length % 2 == 1) {
       usage()
       return
@@ -456,6 +465,7 @@ object FlightProject {
       case Array("--label", labelArg: String) => label = labelArg
       case Array("--threshold", thresholdArg: String) => threshold = thresholdArg.toInt
       case Array("--negativeSamplingRate", negativeSamplingRateArg: String) => negativeSamplingRate = negativeSamplingRateArg.toDouble
+      case Array("--modelType", modelTypeArg: String) => modelType = modelTypeArg
       case Array(_, _) => {
         usage()
         return
