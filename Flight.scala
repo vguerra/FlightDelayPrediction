@@ -273,9 +273,9 @@ object FlightProject {
     }
   }
 
-  def transformDataset(flightWeatherDf: DataFrame, sampledFlightWeatherDf: DataFrame, label: String, nbWeatherHours: Int): DataFrame = {
+  def transformDataset(sampledFlightWeatherDf: DataFrame, label: String, nbWeatherHours: Int): DataFrame = {
 
-    var df = flightWeatherDf
+    var df = sampledFlightWeatherDf
 
     Seq("Arr", "Dep").foreach { airport =>
       (0 until nbWeatherHours).foreach { hour =>
@@ -371,7 +371,7 @@ object FlightProject {
     val precision = metrics.precisionByThreshold.collect().filter(x => x._1 == bestThreshold)(0)._2
     println(s"best F-score: ${bestF1Score}, threshold: ${bestThreshold}, precision: ${precision}, recall: ${recall}")
     println("Area under ROC: " + metrics.areaUnderROC)
-    val multiclassMetrics = new MulticlassMetrics(predictionsWithScore)
+    val multiclassMetrics = new MulticlassMetrics(predictionsWithScore.map{ case (score, label) => (if (score > bestThreshold) 1.0 else 0.0, label) })
     println(s"Accuracy: ${multiclassMetrics.accuracy}")
     println(s"Confusion matrix:\n ${multiclassMetrics.confusionMatrix}")
   }
@@ -451,7 +451,7 @@ object FlightProject {
     var nbWeatherHours: Int = 12
     var label = "D2"
     var threshold = 15
-    var negativeSamplingRate = 0.33
+    var negativeSamplingRate = 0.1
     implicit var modelType = "lr"
     if (args.length % 2 == 1) {
       usage()
@@ -499,7 +499,7 @@ object FlightProject {
 
     val sampledFlightWeatherDf = subsampleDataset(flightWeatherDf, label, negativeSamplingRate).persist()
 
-    val transformedDF = transformDataset(flightWeatherDf, sampledFlightWeatherDf, label, nbWeatherHours)
+    val transformedDF = transformDataset(sampledFlightWeatherDf, label, nbWeatherHours)
 
     val (trainingDataDF, testDataDF) = splitDataset(transformedDF, 0.8)
     trainingDataDF.persist()
