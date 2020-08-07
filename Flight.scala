@@ -311,7 +311,7 @@ object FlightProject {
         Seq("Arr", "Dep").flatMap { airport =>
           (0 until 1).flatMap { hour =>
             skyConditions.map { c => s"${airport}_SkyCondition_${hour}_${c}" } ++
-            // weathertypes.map { c => s"${airport}_WeatherTypes_${hour}_${c}" } ++
+            weatherTypes.map { c => s"${airport}_WeatherTypes_${hour}_${c}" } ++
             Seq(s"${airport}_Visibility_${hour}",
               s"${airport}_WindSpeed_${hour}",
               s"${airport}_RelativeHumidity_${hour}",
@@ -344,7 +344,13 @@ object FlightProject {
     val classifier = modelType match {
       case "lr" => new LogisticRegression().setMaxIter(10)
       case "xgboost" => new XGBoostClassifier(
-        Map("objective" -> "binary:logistic", "num_round" -> 5))
+        Map(
+          "objective" -> "binary:logistic",
+          "missing" -> 0.0,
+          "num_round" -> 5
+          // "max_depth" -> 6,
+          // "eta" -> 0.1
+        ))
         .setFeaturesCol("features")
         .setLabelCol("label")
       case "gbt" => new GBTClassifier()
