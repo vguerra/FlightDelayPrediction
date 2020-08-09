@@ -1,4 +1,4 @@
-import ml.dmlc.xgboost4j.scala.spark.XGBoostClassifier
+import ml.dmlc.xgboost4j.scala.spark.{XGBoostClassifier, TrackerConf}
 import org.apache.spark._
 import org.apache.spark.sql._
 import org.apache.spark.sql.functions._
@@ -348,6 +348,7 @@ object FlightProject {
       case "xgboost" => new XGBoostClassifier(
         Map(
           "objective" -> "binary:logistic",
+          "tracker_conf" -> TrackerConf(30 * 1000, "scala"),
           "missing" -> 0.0,
           "num_round" -> 5
           // "max_depth" -> 6,
@@ -460,7 +461,7 @@ object FlightProject {
     var label = "D2"
     var threshold = 15
     var negativeSamplingRate = 0.1
-    implicit var modelType = "lr"
+    implicit var modelType = "xgboost"
     if (args.length % 2 == 1) {
       usage()
       return
