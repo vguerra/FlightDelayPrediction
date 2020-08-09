@@ -243,10 +243,13 @@ object FlightProject {
     flightWeatherDf
   }
 
-  def subsampleDataset(flightWeatherDf: DataFrame, label: String, negativeSampleRate: Double): DataFrame = {
-    val positivesDf = flightWeatherDf.filter(col(label))
-    val negativesDf = flightWeatherDf.filter(!col(label)).sample(negativeSampleRate, seed=12345)
-    positivesDf.union(negativesDf)
+  def subsampleDataset(flightWeatherDf: DataFrame, label: String): DataFrame = {
+    val totalFlights = flightWeatherDf.count()
+    val delayedFlights = flightWeatherDf.filter(col(label) === 1.0)
+    val totalDelayedFlights = delayedFlights.count()
+    val ratio = (totalFlights / totalDelayedFlights) - 1
+    val sampledOnTimeFlights = flightWeatherDf.filter(col(label) === 0.0).sample(1.0 / ratio, seed = 12345)
+    delayedFlights.union(sampledOnTimeFlights)
   }
 
   val skyConditions = Seq("FEW", "SCT", "BKN", "OVC")
@@ -461,7 +464,6 @@ object FlightProject {
     var nbWeatherHours: Int = 12
     var label = "D2"
     var threshold = 15
-    var negativeSamplingRate = 0.1
     implicit var modelType = "xgboost"
     if (args.length % 2 == 1) {
       usage()
@@ -474,7 +476,6 @@ object FlightProject {
       case Array("--nbWeatherHours", nbWeatherHoursArg: String) => nbWeatherHours = nbWeatherHoursArg.toInt
       case Array("--label", labelArg: String) => label = labelArg
       case Array("--threshold", thresholdArg: String) => threshold = thresholdArg.toInt
-      case Array("--negativeSamplingRate", negativeSamplingRateArg: String) => negativeSamplingRate = negativeSamplingRateArg.toDouble
       case Array("--modelType", modelTypeArg: String) => modelType = modelTypeArg
       case Array(_, _) => {
         usage()
@@ -507,7 +508,7 @@ object FlightProject {
 
     val flightWeatherDf = joinDatasets(flightsDf, weatherDf, nbWeatherHours).persist()
 
-    val sampledFlightWeatherDf = subsampleDataset(flightWeatherDf, label, negativeSamplingRate).persist()
+    val sampledFlightWeatherDf = subsampleDataset(flightWeatherDf, label).persist()
 
     val transformedDF = transformDataset(sampledFlightWeatherDf, label, nbWeatherHours)
 
