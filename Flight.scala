@@ -373,14 +373,15 @@ object FlightProject {
   def evaluateModel(testDataDF: DataFrame, model: ClassificationModel[_, _]) = {
     val predictions = model.transform(testDataDF)
     val getScore = udf((xs: org.apache.spark.ml.linalg.Vector) => xs.toArray(1))
-    val predictionsWithScore = predictions.withColumn("score", getScore(col("probability"))).select("score", "label").rdd.map(x => (x.getDouble(0), x.getDouble(1)))
+    val predictionsWithScore = predictions.withColumn("score", getScore(col("probability"))).select("score", "label").rdd.map(x => (x.getDouble(0), x.getDouble(1))).persist()
     val metrics = new BinaryClassificationMetrics(predictionsWithScore)
     val (bestThreshold, bestF1Score) = metrics.fMeasureByThreshold.collect().maxBy(_._2)
     val recall = metrics.recallByThreshold.collect().filter(x => x._1 == bestThreshold)(0)._2
     val precision = metrics.precisionByThreshold.collect().filter(x => x._1 == bestThreshold)(0)._2
     println(s"best F-score: ${bestF1Score}, threshold: ${bestThreshold}, precision: ${precision}, recall: ${recall}")
     println("Area under ROC: " + metrics.areaUnderROC)
-    val multiclassMetrics = new MulticlassMetrics(predictionsWithScore.map{ case (score, label) => (if (score > bestThreshold) 1.0 else 0.0, label) })
+    val predictionsWithLabel = predictionsWithScore.map{ case (score, label) => (if (score > bestThreshold) 1.0 else 0.0, label) }.persist()
+    val multiclassMetrics = new MulticlassMetrics(predictionsWithLabel)
     println(s"Accuracy: ${multiclassMetrics.accuracy}")
     println(s"Confusion matrix:\n ${multiclassMetrics.confusionMatrix}")
   }
