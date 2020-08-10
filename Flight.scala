@@ -468,7 +468,7 @@ object FlightProject {
     var month: String = "{01,1}"
     var nbWeatherHours: Int = 12
     var label = "D2"
-    var threshold = 15
+    var threshold = 60
     if (args.length % 2 == 1) {
       usage()
       return
