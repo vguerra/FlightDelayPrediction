@@ -169,15 +169,20 @@ object FlightProject {
     val minTs = 3600 * ((flightsDf.agg(min(col("DepTs"))).collect()(0)(0).asInstanceOf[Long] - 12 * 3600) / 3600)
     val maxTs = 3600 * (flightsDf.agg(max(col("ArrTs"))).collect()(0)(0).asInstanceOf[Long] / 3600)
 
+    val bucketSize = 3600 * 24
+
     val fillWeatherDataUdf = udf(fillWeatherData(minTs, maxTs) _, weatherDataSchema)
     val filledWeatherDf = groupedWeatherDf
       .withColumn("weatherData", fillWeatherDataUdf(col("weatherInfo")))
       .withColumn("weatherData", explode(col("weatherData")))
       .select("Airport", "weatherData.*")
+      .withColumn("Bucket", (col("Ts") / bucketSize).cast(LongType)).persist()
+    val dupplicatedFilledWeatherDf = filledWeatherDf.union(filledWeatherDf.withColumn("Bucket", col("Bucket") + 1)).union(filledWeatherDf.withColumn("Bucket", col("Bucket") - 1))
 
-    val flightDepWeatherDf = flightsDf.join(filledWeatherDf,
-      filledWeatherDf.col("Airport") === flightsDf.col("Origin") &&
-        filledWeatherDf.col("Ts").between(
+    val flightDepWeatherDf = flightsDf.join(dupplicatedFilledWeatherDf,
+      dupplicatedFilledWeatherDf.col("Airport") === flightsDf.col("Origin") &&
+        dupplicatedFilledWeatherDf.col("Bucket") === (flightsDf.col("DepTs") / bucketSize).cast(LongType) &&
+        dupplicatedFilledWeatherDf.col("Ts").between(
           flightsDf.col("DepTs") - nbWeatherDataHours * 3600 + 1,
           flightsDf.col("DepTs")))
       .groupBy(col("FlightSeqId"))
@@ -207,9 +212,10 @@ object FlightProject {
       .withColumn("weatherInfoDep", sort_array(col("DepWeatherInfoStructs"), true))
       .drop(col("DepWeatherInfoStructs"))
 
-    val flightWeatherDf = flightDepWeatherDf.join(filledWeatherDf,
-      filledWeatherDf.col("Airport") === flightDepWeatherDf.col("Dest") &&
-        filledWeatherDf.col("Ts").between(
+    val flightWeatherDf = flightDepWeatherDf.join(dupplicatedFilledWeatherDf,
+      dupplicatedFilledWeatherDf.col("Airport") === flightDepWeatherDf.col("Dest") &&
+        dupplicatedFilledWeatherDf.col("Bucket") === (flightDepWeatherDf.col("ArrTs") / bucketSize).cast(LongType) &&
+        dupplicatedFilledWeatherDf.col("Ts").between(
           flightDepWeatherDf.col("ArrTs") - nbWeatherDataHours * 3600 + 1,
           flightDepWeatherDf.col("ArrTs")))
       .groupBy(col("FlightSeqId"))
@@ -435,7 +441,7 @@ object FlightProject {
         stationPressure)
     }.sortBy(_.Ts)
     var idx = 0
-      (minTs until maxTs by 3600).map{ currentTs =>
+      (minTs to maxTs by 3600).map{ currentTs =>
         while (idx + 1 < sortedWeatherInfos.length && sortedWeatherInfos(idx+1).Ts <= currentTs) {
           idx = idx + 1
         }
@@ -453,13 +459,13 @@ object FlightProject {
   }
 
   def usage(): Unit = {
-    println("usage: spark-submit [SPARK_CONF] --class \"FlightProject\" JAR_FILE [--dataDir DATA_DIR] [--year YEAR] [--month MONTH] [--nbWeatherHours NB_WEATHER_HOURS] [--label LABEL] [--threshold THRESHOLD] [--negativeSamplingRate NEGATIVE_SAMPLING_RATE] [--modelType MODEL_TYPE]")
+    println("usage: spark-submit [SPARK_CONF] --class \"FlightProject\" JAR_FILE [--dataDir DATA_DIR] [--year YEAR] [--month MONTH] [--nbWeatherHours NB_WEATHER_HOURS] [--label LABEL] [--threshold THRESHOLD] [--modelType MODEL_TYPE]")
   }
 
 
   def main(args: Array[String]) {
     var dataDir: String = "data/"
-    var year: String = "2017"
+    var year: String = "2009"
     var month: String = "{01,1}"
     var nbWeatherHours: Int = 12
     var label = "D2"
