@@ -1,4 +1,4 @@
-import ml.dmlc.xgboost4j.scala.spark.{XGBoostClassifier, TrackerConf}
+import ml.dmlc.xgboost4j.scala.spark.{TrackerConf, XGBoostClassifier}
 import org.apache.spark._
 import org.apache.spark.sql._
 import org.apache.spark.sql.functions._
@@ -353,31 +353,28 @@ object FlightProject {
     (trainingDataDF, testDataDF)
   }
 
-  def trainModel(trainingDataDF: DataFrame)(implicit modelType: String): ClassificationModel[_, _] = {
-    val classifier = modelType match {
-      case "lr" => new LogisticRegression().setMaxIter(10)
-      case "xgboost" => new XGBoostClassifier(
-        Map(
-          "objective" -> "binary:logistic",
-          "tracker_conf" -> TrackerConf(30 * 1000, "scala"),
-          "missing" -> 0.0,
-          "num_round" -> 5
-          // "max_depth" -> 6,
-          // "eta" -> 0.1
-        ))
-        .setFeaturesCol("features")
-        .setLabelCol("label")
-      case "gbt" => new GBTClassifier()
-          .setLabelCol("label")
-          .setFeaturesCol("features")
-//          .setMaxBins(300)
-//          .setMaxIter(150)
-//          .setStepSize(0.1)
-//          .setMaxDepth(5)
-      case "dt" => new DecisionTreeClassifier()
-        .setLabelCol("label")
-        .setFeaturesCol("features")
-    }
+  def trainModel(trainingDataDF: DataFrame)(implicit spark: SparkSession): ClassificationModel[_, _] = {
+    val nExecutors = spark.sparkContext.getConf.getInt("spark.executor.instances", 1)
+    val coresPerExecutor = spark.sparkContext.getConf.getInt("spark.executor.cores", 1)
+    val cpusPerTask = spark.sparkContext.getConf.getInt("spark.task.cpus", coresPerExecutor)
+    require(coresPerExecutor >= cpusPerTask, s"spark.executor.cores ($coresPerExecutor) should be >= then spark.task.cpus ($cpusPerTask)")
+    require(coresPerExecutor % cpusPerTask == 0, s"$coresPerExecutor should be an integer multiply of $cpusPerTask")
+    val numberOfWorkers = nExecutors * (coresPerExecutor / cpusPerTask)
+
+    val classifier = new XGBoostClassifier(
+      Map(
+        "num_workers" -> numberOfWorkers.toString,
+        "objective" -> "binary:logistic",
+        "tracker_conf" -> TrackerConf(30 * 1000, "scala"),
+        "missing" -> 0.0,
+        "num_round" -> 5,
+        "max_depth" -> 6,
+        "eta" -> 0.1
+      ))
+      .setFeaturesCol("features")
+      .setLabelCol("label")
+      .setEvalMetric("logloss")
+
     classifier.fit(trainingDataDF)
   }
 
@@ -461,7 +458,7 @@ object FlightProject {
   }
 
   def usage(): Unit = {
-    println("usage: spark-submit [SPARK_CONF] --class \"FlightProject\" JAR_FILE [--dataDir DATA_DIR] [--year YEAR] [--month MONTH] [--nbWeatherHours NB_WEATHER_HOURS] [--label LABEL] [--threshold THRESHOLD] [--modelType MODEL_TYPE]")
+    println("usage: spark-submit [SPARK_CONF] --class \"FlightProject\" JAR_FILE [--dataDir DATA_DIR] [--year YEAR] [--month MONTH] [--nbWeatherHours NB_WEATHER_HOURS] [--label LABEL] [--threshold THRESHOLD]")
   }
 
 
@@ -472,7 +469,6 @@ object FlightProject {
     var nbWeatherHours: Int = 12
     var label = "D2"
     var threshold = 15
-    implicit var modelType = "xgboost"
     if (args.length % 2 == 1) {
       usage()
       return
@@ -484,13 +480,11 @@ object FlightProject {
       case Array("--nbWeatherHours", nbWeatherHoursArg: String) => nbWeatherHours = nbWeatherHoursArg.toInt
       case Array("--label", labelArg: String) => label = labelArg
       case Array("--threshold", thresholdArg: String) => threshold = thresholdArg.toInt
-      case Array("--modelType", modelTypeArg: String) => modelType = modelTypeArg
       case Array(_, _) => {
         usage()
         return
       }
     }
-
 
     val conf: SparkConf = new SparkConf().setAppName("FlightProject")
     implicit val sc: SparkContext = new SparkContext(conf)
