@@ -82,8 +82,8 @@ object FlightProject {
     // parse timestamps
     weatherDf = weatherDf
       .withColumn("Time", lpad(col("Time"), 4, "0"))
-      .withColumn("Ts", concat(col("date"), col("Time")))
-      .withColumn("Ts", unix_timestamp(col("Ts"), "yyyyMMddHHmm"))
+      .withColumn("DateTime", concat(col("date"), col("Time")))
+      .withColumn("Ts", unix_timestamp(col("DateTime"), "yyyyMMddHHmm"))
 
     weatherDf = weatherDf.select(
       col("Ts"),
@@ -97,15 +97,17 @@ object FlightProject {
       col("StationPressure").cast(DoubleType))
 
     // handle missing values
-    weatherDf = weatherDf.na.fill("", Seq(
-      "SkyCondition",
-      "WeatherType"))
-    weatherDf = weatherDf.na.fill(-1, Seq(
-      "Visibility",
-      "WindSpeed",
-      "RelativeHumidity",
-      "WindDirection",
-      "StationPressure"))
+    weatherDf = weatherDf
+      .na.fill("", Seq(
+        "SkyCondition",
+        "WeatherType"))
+      .na.fill(-1, Seq(
+        "Visibility",
+        "WindSpeed",
+        "RelativeHumidity",
+        "WindDirection",
+        "StationPressure"))
+      .na.drop()
 
     weatherDf.repartition(200)
   }
