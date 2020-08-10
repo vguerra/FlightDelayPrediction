@@ -154,6 +154,15 @@ object FlightProject {
       .withColumn(s"D4", col("ArrDelay") >= lit(threshold))
   }
 
+  def subsampleDataset(flightDf: DataFrame, label: String): DataFrame = {
+    val totalFlights = flightDf.count()
+    val delayedFlights = flightDf.filter(col(label) === 1.0)
+    val totalDelayedFlights = delayedFlights.count()
+    val ratio = (totalFlights / totalDelayedFlights) - 1
+    val sampledOnTimeFlights = flightDf.filter(col(label) === 0.0).sample(1.0 / ratio, seed = 12345)
+    delayedFlights.union(sampledOnTimeFlights)
+  }
+
   def joinDatasets(flightsDf: DataFrame, weatherDf: DataFrame, nbWeatherDataHours: Int): DataFrame = {
     val groupedWeatherDf = weatherDf
       .groupBy(col("Airport"))
@@ -249,15 +258,6 @@ object FlightProject {
       .drop(col("ArrWeatherInfoStructs"))
 
     flightWeatherDf
-  }
-
-  def subsampleDataset(flightWeatherDf: DataFrame, label: String): DataFrame = {
-    val totalFlights = flightWeatherDf.count()
-    val delayedFlights = flightWeatherDf.filter(col(label) === 1.0)
-    val totalDelayedFlights = delayedFlights.count()
-    val ratio = (totalFlights / totalDelayedFlights) - 1
-    val sampledOnTimeFlights = flightWeatherDf.filter(col(label) === 0.0).sample(1.0 / ratio, seed = 12345)
-    delayedFlights.union(sampledOnTimeFlights)
   }
 
   val skyConditions = Seq("FEW", "SCT", "BKN", "OVC")
@@ -508,11 +508,11 @@ object FlightProject {
 
     flightsDf = addLabels(flightsDf, threshold).persist()
 
-    val flightWeatherDf = joinDatasets(flightsDf, weatherDf, nbWeatherHours).persist()
+    val sampledFlightsDf = subsampleDataset(flightsDf, label).persist()
 
-    val sampledFlightWeatherDf = subsampleDataset(flightWeatherDf, label).persist()
+    val flightWeatherDf = joinDatasets(sampledFlightsDf, weatherDf, nbWeatherHours).persist()
 
-    val transformedDF = transformDataset(sampledFlightWeatherDf, label, nbWeatherHours)
+    val transformedDF = transformDataset(flightWeatherDf, label, nbWeatherHours)
 
     val (trainingDataDF, testDataDF) = splitDataset(transformedDF, 0.8)
     trainingDataDF.persist()
