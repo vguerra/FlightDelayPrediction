@@ -178,7 +178,8 @@ object FlightProject {
     val flightDepWeatherDf = flightsDf.join(filledWeatherDf,
       filledWeatherDf.col("Airport") === flightsDf.col("Origin") &&
         filledWeatherDf.col("Ts").between(
-          flightsDf.col("DepTs") - nbWeatherDataHours * 3600, flightsDf.col("DepTs")))
+          flightsDf.col("DepTs") - nbWeatherDataHours * 3600 + 1,
+          flightsDf.col("DepTs")))
       .groupBy(col("FlightSeqId"))
       .agg(
         min(col("Origin")).as("Origin"),
@@ -209,7 +210,8 @@ object FlightProject {
     val flightWeatherDf = flightDepWeatherDf.join(filledWeatherDf,
       filledWeatherDf.col("Airport") === flightDepWeatherDf.col("Dest") &&
         filledWeatherDf.col("Ts").between(
-          flightDepWeatherDf.col("ArrTs") - nbWeatherDataHours * 3600, flightDepWeatherDf.col("ArrTs")))
+          flightDepWeatherDf.col("ArrTs") - nbWeatherDataHours * 3600 + 1,
+          flightDepWeatherDf.col("ArrTs")))
       .groupBy(col("FlightSeqId"))
       .agg(
         min(col("Origin")).as("Origin"),
