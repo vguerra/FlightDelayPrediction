@@ -25,6 +25,9 @@ object FlightProject {
     flightsDf = flightsDf
       .filter((col("Cancelled") === 0.0 && col("Diverted") === 0.0))
 
+    val airportCountDf = flightsDf.groupBy(col("Dest")).count().select(col("Dest").as("Airport"), col("count").as("nbFlightsPerAirport"))
+    flightsDf = flightsDf.join(airportCountDf, col("Dest") === col("Airport"))
+
     // compute departure timestamps
     flightsDf = flightsDf
       .withColumn("CRSDepTime", lpad(col("CRSDepTime"), 4, "0"))
@@ -58,6 +61,7 @@ object FlightProject {
       col("ArrTs"),
       col("Origin"),
       col("Dest"),
+      col("nbFlightsPerAirport"),
       col("DayOfWeek").cast(LongType),
       (col("DepTs") % 86400).as("DepSecondOfDay"),
       (col("ArrTs") % 86400).as("ArrSecondOfDay"),
@@ -202,6 +206,7 @@ object FlightProject {
         min(col("Dest")).as("Dest"),
         min(col("DepTs")).as("DepTs"),
         min(col("ArrTs")).as("ArrTs"),
+        min(col("nbFlightsPerAirport")).as("nbFlightsPerAirport"),
         min(col("DayOfWeek")).as("DayOfWeek"),
         min(col("DepSecondOfDay")).as("DepSecondOfDay"),
         min(col("ArrSecondOfDay")).as("ArrSecondOfDay"),
@@ -235,6 +240,7 @@ object FlightProject {
         min(col("Dest")).as("Dest"),
         min(col("DepTs")).as("DepTs"),
         min(col("ArrTs")).as("ArrTs"),
+        min(col("nbFlightsPerAirport")).as("nbFlightsPerAirport"),
         min(col("DayOfWeek")).as("DayOfWeek"),
         min(col("DepSecondOfDay")).as("DepSecondOfDay"),
         min(col("ArrSecondOfDay")).as("ArrSecondOfDay"),
@@ -317,6 +323,7 @@ object FlightProject {
         "OriginIdx",
         "DepTs",
         "ArrTs",
+        "nbFlightsPerAirport",
         "DayOfWeek",
         "DepSecondOfDay",
         "ArrSecondOfDay",
