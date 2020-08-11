@@ -329,7 +329,7 @@ object FlightProject {
         "ArrSecondOfDay",
         "DayOfYear") ++
         Seq("Arr", "Dep").flatMap { airport =>
-          (0 until 1).flatMap { hour =>
+          (0 until nbWeatherHours).flatMap { hour =>
             skyConditions.map { c => s"${airport}_SkyCondition_${hour}_${c}" } ++
             weatherTypes.map { c => s"${airport}_WeatherTypes_${hour}_${c}" } ++
             Seq(s"${airport}_Visibility_${hour}",
