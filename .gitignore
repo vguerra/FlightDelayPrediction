@@ -3,3 +3,4 @@ target/*
 sync.sh
 data/*
 .idea/*
+env/*
