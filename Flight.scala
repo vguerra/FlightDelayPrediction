@@ -1,4 +1,4 @@
-import ml.dmlc.xgboost4j.scala.spark.{TrackerConf, XGBoostClassifier}
+import ml.dmlc.xgboost4j.scala.spark.{TrackerConf, XGBoostClassificationModel, XGBoostClassifier}
 import org.apache.spark._
 import org.apache.spark.sql._
 import org.apache.spark.sql.functions._
@@ -7,7 +7,6 @@ import org.apache.spark.ml.Pipeline
 import org.apache.spark.ml.classification._
 import org.apache.spark.ml.feature._
 import org.apache.spark.mllib.evaluation.{BinaryClassificationMetrics, MulticlassMetrics}
-import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.functions.{col, lit, udf, unix_timestamp}
 
 import scala.collection.mutable
@@ -354,13 +353,13 @@ object FlightProject {
     transformedDF
   }
 
-  def splitDataset(df: DataFrame, splitTrainingRatio: Double): (DataFrame, DataFrame) = {
-    val Array(trainingDataDF, testDataDF) = df
-      .randomSplit(Array(splitTrainingRatio, 1.0 - splitTrainingRatio))
-    (trainingDataDF, testDataDF)
+  def splitDataset(df: DataFrame, splitTrainingRatio: Double, splitValidationRatio: Double): (DataFrame, DataFrame, DataFrame) = {
+    val Array(trainingDataDF, validationDataDF, testDataDF) = df
+      .randomSplit(Array(splitTrainingRatio, splitValidationRatio, 1.0 - splitTrainingRatio - splitValidationRatio))
+    (trainingDataDF, validationDataDF, testDataDF)
   }
 
-  def trainModel(trainingDataDF: DataFrame)(implicit spark: SparkSession): ClassificationModel[_, _] = {
+  def trainModel(trainingDataDF: DataFrame, validationDataDF: DataFrame)(implicit spark: SparkSession): XGBoostClassificationModel = {
     val nExecutors = spark.sparkContext.getConf.getInt("spark.executor.instances", 1)
     val coresPerExecutor = spark.sparkContext.getConf.getInt("spark.executor.cores", 1)
     val cpusPerTask = spark.sparkContext.getConf.getInt("spark.task.cpus", coresPerExecutor)
@@ -381,12 +380,26 @@ object FlightProject {
     val classifier = new XGBoostClassifier(parameters)
       .setFeaturesCol("features")
       .setLabelCol("label")
+      .setEvalSets(Map("validationSet" -> validationDataDF))
       .setEvalMetric("logloss")
 
     classifier.fit(trainingDataDF)
   }
 
-  def evaluateModel(testDataDF: DataFrame, model: ClassificationModel[_, _]) = {
+  def dumpLosses(model: XGBoostClassificationModel, outputPath: String)(implicit sc: SparkContext): Unit = {
+    val trainLogLoss = model.summary.trainObjectiveHistory
+    val (validationSetNameLoss, validationLogLoss) = model.summary.validationObjectiveHistory(0)
+
+    val formattedLooses = "trainLogLoss\tvalidationLogLoss\n" + trainLogLoss.zip(validationLogLoss).map {
+      case (train, validation) => train.toString + "\t" + validation.toString
+    }.mkString("\n")
+
+    sc.parallelize(Seq(formattedLooses))
+      .repartition(1)
+      .saveAsTextFile(outputPath + "/" + sc.applicationId + "_log")
+  }
+
+  def evaluateModel(testDataDF: DataFrame, model: XGBoostClassificationModel) = {
     val predictions = model.transform(testDataDF)
     val getScore = udf((xs: org.apache.spark.ml.linalg.Vector) => xs.toArray(1))
     val predictionsWithScore = predictions.withColumn("score", getScore(col("probability"))).select("score", "label").rdd.map(x => (x.getDouble(0), x.getDouble(1))).persist()
@@ -522,11 +535,13 @@ object FlightProject {
 
     val transformedDF = transformDataset(flightWeatherDf, label, nbWeatherHours)
 
-    val (trainingDataDF, testDataDF) = splitDataset(transformedDF, 0.8)
+    val (trainingDataDF, validationDataDF, testDataDF) = splitDataset(transformedDF, 0.8, 0.1)
     trainingDataDF.persist()
+    validationDataDF.persist()
     testDataDF.persist()
 
-    val model = trainModel(trainingDataDF)
+    val model = trainModel(trainingDataDF, validationDataDF)
+    dumpLosses(model, dataDir)
     evaluateModel(trainingDataDF, model)
     evaluateModel(testDataDF, model)
 
