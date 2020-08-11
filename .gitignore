@@ -4,3 +4,4 @@ sync.sh
 data/*
 .idea/*
 env/*
+.ipynb_checkpoints
