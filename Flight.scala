@@ -368,16 +368,17 @@ object FlightProject {
     require(coresPerExecutor % cpusPerTask == 0, s"$coresPerExecutor should be an integer multiply of $cpusPerTask")
     val numberOfWorkers = nExecutors * (coresPerExecutor / cpusPerTask)
 
-    val classifier = new XGBoostClassifier(
-      Map(
-        "num_workers" -> numberOfWorkers.toString,
-        "objective" -> "binary:logistic",
-        "tracker_conf" -> TrackerConf(30 * 1000, "scala"),
-        "missing" -> 0.0,
-        "num_round" -> 5,
-        "max_depth" -> 6,
-        "eta" -> 0.1
-      ))
+    val parameters = Map(
+      "num_workers" -> numberOfWorkers.toString,
+      "objective" -> "binary:logistic",
+      "tracker_conf" -> TrackerConf(30 * 1000, "scala"),
+      "missing" -> 0.0,
+      "num_round" -> 500,
+      "max_depth" -> 8,
+      "eta" -> 0.15
+    )
+    println(s"Xgboost parameters: ${parameters}")
+    val classifier = new XGBoostClassifier(parameters)
       .setFeaturesCol("features")
       .setLabelCol("label")
       .setEvalMetric("logloss")
