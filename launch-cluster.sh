@@ -10,4 +10,5 @@ spark-submit --verbose --master yarn \
     --num-executors 100 \
     --executor-memory 16g \
     --class FlightProject "${DIR}/target/scala-2.11/FlightProject-assembly-1.0.jar" \
-    --dataDir "/user/vm.guerramoran/flights_data/"
+    --dataDir "/user/vm.guerramoran/flights_data/" \
+    --outputDir "/user/vm.guerramoran/flights_data/output/"

@@ -386,7 +386,7 @@ object FlightProject {
     classifier.fit(trainingDataDF)
   }
 
-  def dumpLosses(model: XGBoostClassificationModel, outputPath: String)(implicit sc: SparkContext): Unit = {
+  def dumpLosses(model: XGBoostClassificationModel, outputDir: String)(implicit sc: SparkContext): Unit = {
     val trainLogLoss = model.summary.trainObjectiveHistory
     val (validationSetNameLoss, validationLogLoss) = model.summary.validationObjectiveHistory(0)
 
@@ -396,7 +396,7 @@ object FlightProject {
 
     sc.parallelize(Seq(formattedLooses))
       .repartition(1)
-      .saveAsTextFile(outputPath + "/" + sc.applicationId + "_log")
+      .saveAsTextFile(outputDir + "/" + sc.applicationId + "_log")
   }
 
   def evaluateModel(testDataDF: DataFrame, model: XGBoostClassificationModel) = {
@@ -479,12 +479,13 @@ object FlightProject {
   }
 
   def usage(): Unit = {
-    println("usage: spark-submit [SPARK_CONF] --class \"FlightProject\" JAR_FILE [--dataDir DATA_DIR] [--year YEAR] [--month MONTH] [--nbWeatherHours NB_WEATHER_HOURS] [--label LABEL] [--threshold THRESHOLD]")
+    println("usage: spark-submit [SPARK_CONF] --class \"FlightProject\" JAR_FILE [--dataDir DATA_DIR] [--outputDir OUTPUT_DIR] [--year YEAR] [--month MONTH] [--nbWeatherHours NB_WEATHER_HOURS] [--label LABEL] [--threshold THRESHOLD]")
   }
 
 
   def main(args: Array[String]) {
     var dataDir: String = "data/"
+    var outputDir: String = "output/"
     var year: String = "2009"
     var month: String = "{01,1}"
     var nbWeatherHours: Int = 12
@@ -496,6 +497,7 @@ object FlightProject {
     }
     args.sliding(2, 2).toList.collect {
       case Array("--dataDir", dataDirArg: String) => dataDir = dataDirArg
+      case Array("--outputDir", outputDirArg: String) => outputDir = outputDirArg
       case Array("--year", yearArg: String) => year = yearArg
       case Array("--month", monthArg: String) => month = monthArg
       case Array("--nbWeatherHours", nbWeatherHoursArg: String) => nbWeatherHours = nbWeatherHoursArg.toInt
@@ -541,7 +543,7 @@ object FlightProject {
     testDataDF.persist()
 
     val model = trainModel(trainingDataDF, validationDataDF)
-    dumpLosses(model, dataDir)
+    dumpLosses(model, outputDir)
     evaluateModel(trainingDataDF, model)
     evaluateModel(testDataDF, model)
 
