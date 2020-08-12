@@ -382,17 +382,23 @@ object FlightProject {
       .setLabelCol("label")
       .setEvalSets(Map("validationSet" -> validationDataDF))
       .setEvalMetric("logloss")
+//      .setNumEarlyStoppingRounds(10)
 
     classifier.fit(trainingDataDF)
   }
 
   def dumpLosses(model: XGBoostClassificationModel, outputDir: String)(implicit sc: SparkContext): Unit = {
     val trainLogLoss = model.summary.trainObjectiveHistory
-    val (validationSetNameLoss, validationLogLoss) = model.summary.validationObjectiveHistory(0)
 
-    val formattedLooses = "trainLogLoss\tvalidationLogLoss\n" + trainLogLoss.zip(validationLogLoss).map {
-      case (train, validation) => train.toString + "\t" + validation.toString
-    }.mkString("\n")
+    val formattedLooses = if (model.summary.validationObjectiveHistory.isEmpty) {
+      "trainLogLoss\n" + trainLogLoss.mkString("\n")
+    } else {
+      val (validationSetNameLoss, validationLogLoss) = model.summary.validationObjectiveHistory(0)
+
+      "trainLogLoss\tvalidationLogLoss\n" + trainLogLoss.zip(validationLogLoss).map {
+        case (train, validation) => train.toString + "\t" + validation.toString
+      }.mkString("\n")
+    }
 
     sc.parallelize(Seq(formattedLooses))
       .repartition(1)
