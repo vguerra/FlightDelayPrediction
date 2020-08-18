@@ -366,24 +366,33 @@ object FlightProject {
     require(coresPerExecutor >= cpusPerTask, s"spark.executor.cores ($coresPerExecutor) should be >= then spark.task.cpus ($cpusPerTask)")
     require(coresPerExecutor % cpusPerTask == 0, s"$coresPerExecutor should be an integer multiply of $cpusPerTask")
     val numberOfWorkers = nExecutors * (coresPerExecutor / cpusPerTask)
+    println(s"spark.task.cpus=${cpusPerTask}")
+    println(s"spark.executor.instances=${nExecutors}")
+    println(s"spark.executor.cores=${coresPerExecutor}")
 
     val parameters = Map(
-      "num_workers" -> numberOfWorkers.toString,
+      "num_workers" -> numberOfWorkers,
+//      "tree_method" -> "hist",
+      "min_child_weight" -> 1,
       "objective" -> "binary:logistic",
       "tracker_conf" -> TrackerConf(30 * 1000, "scala"),
       "missing" -> 0.0,
-      "num_round" -> 500,
-      "max_depth" -> 8,
+      "num_round" -> 2000,
+      "max_depth" -> 10,
       "eta" -> 0.15
     )
+
     println(s"Xgboost parameters: ${parameters}")
+
     val classifier = new XGBoostClassifier(parameters)
       .setFeaturesCol("features")
       .setLabelCol("label")
-      .setEvalSets(Map("validationSet" -> validationDataDF))
       .setEvalMetric("logloss")
-//      .setNumEarlyStoppingRounds(10)
+      .setEvalSets(Map("validationSet" -> validationDataDF))
+      .setMaximizeEvaluationMetrics(false)
+      .setNumEarlyStoppingRounds(15)
 
+    println(s"Xgboost all parames: ${classifier.MLlib2XGBoostParams}")
     classifier.fit(trainingDataDF)
   }
 
@@ -523,6 +532,8 @@ object FlightProject {
 
     val weatherFiles = dataDir + s"/${year}${month}hourly.txt"
     val flightFiles = dataDir + s"/On_Time_Reporting_Carrier_On_Time_Performance_(1987_present)_${year}_${month}.csv"
+    println(s"Will load weather files: ${weatherFiles}")
+    println(s"Will load flight files: ${flightFiles}")
 
     var flightsDf = readFlightData(flightFiles)
 
@@ -543,7 +554,7 @@ object FlightProject {
 
     val transformedDF = transformDataset(flightWeatherDf, label, nbWeatherHours)
 
-    val (trainingDataDF, validationDataDF, testDataDF) = splitDataset(transformedDF, 0.8, 0.1)
+    val (trainingDataDF, validationDataDF, testDataDF) = splitDataset(transformedDF, 0.7, 0.2)
     trainingDataDF.persist()
     validationDataDF.persist()
     testDataDF.persist()
