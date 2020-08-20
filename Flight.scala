@@ -534,6 +534,7 @@ object FlightProject {
     val flightFiles = dataDir + s"/On_Time_Reporting_Carrier_On_Time_Performance_(1987_present)_${year}_${month}.csv"
     println(s"Will load weather files: ${weatherFiles}")
     println(s"Will load flight files: ${flightFiles}")
+    println(s"Will merge with ${nbWeatherHours} hours of weather data")
 
     var flightsDf = readFlightData(flightFiles)
 
