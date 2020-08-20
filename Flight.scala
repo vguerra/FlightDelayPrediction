@@ -134,6 +134,9 @@ object FlightProject {
   }
 
   def mapWbanToAirportFromMappingFile(weatherDf: DataFrame, airportCodesFile: String)(implicit sc: SparkContext, spark: SparkSession): DataFrame = {
+    if (weatherDf.isEmpty) {
+      return weatherDf
+    }
     import spark.implicits._
     val wbanToAirportDf = spark.read.format("csv")
       .option("delimiter", "|")
@@ -167,6 +170,9 @@ object FlightProject {
   }
 
   def joinDatasets(flightsDf: DataFrame, weatherDf: DataFrame, nbWeatherDataHours: Int): DataFrame = {
+    if (weatherDf.isEmpty) {
+      return flightsDf
+    }
     val groupedWeatherDf = weatherDf
       .groupBy(col("Airport"))
       .agg(collect_list(struct(
@@ -538,7 +544,11 @@ object FlightProject {
 
     var flightsDf = readFlightData(flightFiles)
 
-    var weatherDf = readWeatherData(weatherFiles)
+    var weatherDf = if (nbWeatherHours > 0) {
+      readWeatherData(weatherFiles)
+    } else {
+      spark.emptyDataFrame
+    }
 
     val airportCodesFile = dataDir + s"/airport_codes_map.txt"
     weatherDf = mapWbanToAirportFromMappingFile(weatherDf, airportCodesFile)
