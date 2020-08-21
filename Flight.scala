@@ -402,7 +402,7 @@ object FlightProject {
     classifier.fit(trainingDataDF)
   }
 
-  def dumpLosses(model: XGBoostClassificationModel, outputDir: String)(implicit sc: SparkContext): Unit = {
+  def dumpModelAndLosses(model: XGBoostClassificationModel, outputDir: String)(implicit sc: SparkContext): Unit = {
     val trainLogLoss = model.summary.trainObjectiveHistory
 
     val formattedLooses = if (model.summary.validationObjectiveHistory.isEmpty) {
@@ -415,9 +415,12 @@ object FlightProject {
       }.mkString("\n")
     }
 
+    val logDir = outputDir + "/" + sc.applicationId + "_log/"
     sc.parallelize(Seq(formattedLooses))
       .repartition(1)
-      .saveAsTextFile(outputDir + "/" + sc.applicationId + "_log")
+      .saveAsTextFile(logDir)
+
+    model.write.overwrite().save(logDir + "model")
   }
 
   def evaluateModel(testDataDF: DataFrame, model: XGBoostClassificationModel) = {
@@ -571,7 +574,7 @@ object FlightProject {
     testDataDF.persist()
 
     val model = trainModel(trainingDataDF, validationDataDF)
-    dumpLosses(model, outputDir)
+    dumpModelAndLosses(model, outputDir)
     evaluateModel(trainingDataDF, model)
     evaluateModel(testDataDF, model)
 
