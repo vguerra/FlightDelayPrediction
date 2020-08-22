@@ -297,7 +297,7 @@ object FlightProject {
     }
   }
 
-  def transformDataset(sampledFlightWeatherDf: DataFrame, label: String, nbWeatherHours: Int): DataFrame = {
+  def transformDataset(sampledFlightWeatherDf: DataFrame, label: String, nbWeatherHours: Int, featuresDir: String)(implicit sc: SparkContext): DataFrame = {
 
     var df = sampledFlightWeatherDf
 
@@ -346,6 +346,12 @@ object FlightProject {
         }
       )
       .setOutputCol("featuresVector")
+
+    val formatedFeatures = "featureName\n" + assembler.getInputCols.mkString("\n")
+    sc.parallelize(Seq(formatedFeatures))
+      .repartition(1)
+      .saveAsTextFile(featuresDir)
+
     val vectorIndexer = new VectorIndexer()
       .setInputCol("featuresVector")
       .setOutputCol("features")
@@ -402,7 +408,7 @@ object FlightProject {
     classifier.fit(trainingDataDF)
   }
 
-  def dumpModelAndLosses(model: XGBoostClassificationModel, outputDir: String)(implicit sc: SparkContext): Unit = {
+  def dumpModelAndLosses(model: XGBoostClassificationModel, modelPath: String, metricsDir: String)(implicit sc: SparkContext): Unit = {
     val trainLogLoss = model.summary.trainObjectiveHistory
 
     val formattedLooses = if (model.summary.validationObjectiveHistory.isEmpty) {
@@ -415,12 +421,24 @@ object FlightProject {
       }.mkString("\n")
     }
 
-    val logDir = outputDir + "/" + sc.applicationId + "_log/"
     sc.parallelize(Seq(formattedLooses))
       .repartition(1)
-      .saveAsTextFile(logDir)
+      .saveAsTextFile(metricsDir)
 
-    model.write.overwrite().save(logDir + "model")
+    if (!modelPath.startsWith("viewfs") && !modelPath.startsWith("hdfs")) {
+      // we only dump model when saving locally b/c xgboost requires compiling from sources for HDFS support
+      model.nativeBooster.saveModel(modelPath)
+    } else {
+      val formattedScores = "featureId\tscore\n" +
+        model.nativeBooster.getFeatureScore().toSeq.sortWith(_._2 > _._2).map {
+        case (featureId, score) => featureId + "\t" + score.toString
+        }.mkString("\n")
+
+      sc.parallelize(Seq(formattedScores))
+        .repartition(1)
+        .saveAsTextFile(modelPath)
+    }
+//    println(model.nativeBooster.getFeatureScore().toSeq.sortWith(_._2 > _._2).mkString("\n"))
   }
 
   def evaluateModel(testDataDF: DataFrame, model: XGBoostClassificationModel) = {
@@ -544,6 +562,8 @@ object FlightProject {
     println(s"Will load weather files: ${weatherFiles}")
     println(s"Will load flight files: ${flightFiles}")
     println(s"Will merge with ${nbWeatherHours} hours of weather data")
+    val logDir = outputDir + "/" + sc.applicationId + "_log/"
+    val (metricsDir, featuresDir, modelPath) = (logDir + "metrics/", logDir + "features/", logDir + "model")
 
     var flightsDf = readFlightData(flightFiles)
 
@@ -566,7 +586,7 @@ object FlightProject {
 
     val flightWeatherDf = joinDatasets(sampledFlightsDf, weatherDf, nbWeatherHours).persist()
 
-    val transformedDF = transformDataset(flightWeatherDf, label, nbWeatherHours)
+    val transformedDF = transformDataset(flightWeatherDf, label, nbWeatherHours, featuresDir)
 
     val (trainingDataDF, validationDataDF, testDataDF) = splitDataset(transformedDF, 0.7, 0.2)
     trainingDataDF.persist()
@@ -574,7 +594,7 @@ object FlightProject {
     testDataDF.persist()
 
     val model = trainModel(trainingDataDF, validationDataDF)
-    dumpModelAndLosses(model, outputDir)
+    dumpModelAndLosses(model, modelPath, metricsDir)
     evaluateModel(trainingDataDF, model)
     evaluateModel(testDataDF, model)
 
