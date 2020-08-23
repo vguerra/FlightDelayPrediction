@@ -425,20 +425,19 @@ object FlightProject {
       .repartition(1)
       .saveAsTextFile(metricsDir)
 
-    if (!modelPath.startsWith("viewfs") && !modelPath.startsWith("hdfs")) {
-      // we only dump model when saving locally b/c xgboost requires compiling from sources for HDFS support
-      model.nativeBooster.saveModel(modelPath)
-    } else {
+    if (modelPath.startsWith("viewfs") || modelPath.startsWith("hdfs")) {
       val formattedScores = "featureId\tscore\n" +
         model.nativeBooster.getFeatureScore().toSeq.sortWith(_._2 > _._2).map {
-        case (featureId, score) => featureId + "\t" + score.toString
+          case (featureId, score) => featureId + "\t" + score.toString
         }.mkString("\n")
 
       sc.parallelize(Seq(formattedScores))
         .repartition(1)
         .saveAsTextFile(modelPath)
+    } else {
+      // we only dump model when saving locally b/c xgboost requires compiling from sources for HDFS support
+      model.nativeBooster.saveModel(modelPath)
     }
-//    println(model.nativeBooster.getFeatureScore().toSeq.sortWith(_._2 > _._2).mkString("\n"))
   }
 
   def evaluateModel(testDataDF: DataFrame, model: XGBoostClassificationModel) = {
