@@ -12,7 +12,8 @@ spark-submit --verbose --master yarn \
     --executor-memory 4g \
     --conf spark.yarn.submit.waitAppCompletion=false \
     --class FlightProject "${DIR}/target/scala-2.11/FlightProject-assembly-1.0.jar" \
-    --dataDir "/user/vm.guerramoran/flights_data/" \
-    --outputDir "/user/vm.guerramoran/flights_output/" \
+    --dataDir "viewfs:///user/vm.guerramoran/flights_data/" \
+    --outputDir "viewfs:///user/vm.guerramoran/flights_output/" \
     --year "{2009,2010,2011,2012,2013}" \
-    --month "*"
+    --month "*" \
+    --nbWeatherHours 12
