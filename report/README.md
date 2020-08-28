@@ -192,26 +192,32 @@ For different threshold delays and target labels we obtained the same numbers of
 
 The results are also very close to the ones obtain in the paper:
 
+#### Target labels
+
+Results for different target labels:
+
 | label | delay | precision | recall | accuracy |
 | ----- | ----- | --------- | ------ | -------- |
-| D1    | 15    | 0.695     | 0.815  | 0.729    |
-| D2    | 15    | 0.720     | 0.812  | 0.752    |
-| D3    | 15    | 0.651     | 0.838  | 0.696    |
-| D4    | 15    | 0.571     | 0.829  | 0.620    |
 | D1    | 60    | 0.854     | 0.882  | 0.865    |
 | D2    | 60    | 0.871     | 0.886  | 0.877    |
 | D3    | 60    | 0.745     | 0.815  | 0.770    |
 | D4    | 60    | 0.655     | 0.804  | 0.693    |
 
+The values we obtain are very close to the one reported in the paper (Fig. 9), and around 1% to 2% better.
+
+#### Delay thresholds
+
+Results for different threshold delay:
+
 | label | delay | precision | recall | accuracy |
 | ----- | ----- | --------- | ------ | -------- |
-| D2    | 15    | 0.     | 0.  | 0.    |
-| D2    | 30    | 0.     | 0.  | 0.    |
-| D2    | 45    | 0.     | 0.  | 0.    |
+| D2    | 15    | 0.720     | 0.812  | 0.752    |
+| D2    | 30    | 0.813     | 0.853  | 0.830    |
+| D2    | 45    | 0.854     | 0.877  | 0.863    |
 | D2    | 60    | 0.871     | 0.886  | 0.877    |
-| D2    | 90    | 0.     | 0.  | 0.    |
+| D2    | 90    | 0.874     | 0.890  | 0.881    |
 
-TODO do the experiment + put the results
+Again the values we obtain are very close to the one reported in the paper (Fig. 9), and around 1% to 2% better.
 
 ### model accuracy with more/less data (one month to 5 years)
 
