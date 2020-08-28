@@ -190,10 +190,6 @@ For different threshold delays and target labels we obtained the same numbers of
 | D3    | 60    | 953k           | 950k                                |
 | D4    | 60    | 1.67M          | 1.7M                                |
 
-The results are also very close to the ones obtain in the paper:
-
-#### Target labels
-
 Results for different target labels:
 
 | label | delay | precision | recall | accuracy |
@@ -205,9 +201,7 @@ Results for different target labels:
 
 The values we obtain are very close to the one reported in the paper (Fig. 9), and around 1% to 2% better.
 
-#### Delay thresholds
-
-Results for different threshold delay:
+Results for different threshold delays:
 
 | label | delay | precision | recall | accuracy |
 | ----- | ----- | --------- | ------ | -------- |
