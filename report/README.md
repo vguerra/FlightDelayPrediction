@@ -179,6 +179,7 @@ The definition for the target labels are the ones defined in the paper:
 - D4 contains all delayed flights.
 
 For different threshold delays and target labels we obtained the same numbers of positives than the ones from the papers:
+
 | label | delay | delayed tuples |
 | ----- | ----- | -------------- |
 | D1    | 15    | 1.32M          |
@@ -191,6 +192,7 @@ For different threshold delays and target labels we obtained the same numbers of
 | D4    | 60    | 1.67M          |
 
 The results are also very close to the ones obtain in the paper:
+
 | label | delay | precision | recall | accuracy |
 | ----- | ----- | --------- | ------ | -------- |
 | D1    | 15    | 0.695     | 0.815  | 0.729    |
