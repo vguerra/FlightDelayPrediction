@@ -4,9 +4,9 @@ Stephane Le Roy <s.leroy@criteo.com>
 
 ## Introduction
 In this report, we present the work done to implement a Machine Learning pipeline that trains a model that predicts delays in US Flights.
-We take as reference a paper published at beginning of 2016 [Using Scalable Data Mining for Predicting Flight Delays](https://www.researchgate.net/publication/292539590_Using_Scalable_Data_Mining_for_Predicting_Flight_Delays) by Belcastro, Marozzo, Talia and Trunfio.
+We take as reference a paper published at the beginning of 2016 [Using Scalable Data Mining for Predicting Flight Delays](https://www.researchgate.net/publication/292539590_Using_Scalable_Data_Mining_for_Predicting_Flight_Delays) by Belcastro, Marozzo, Talia and Trunfio.
 
-In order to have results comparable with the paper, we used the same dataset, both in term of date range, from 2009 to 2013, and in term of feature used.
+In order to have results comparable with the paper, we used the same dataset, both in terms of date range, from 2009 to 2013, and in terms of feature used.
 The results described below were obtained using the following setup (unless otherwise specified):
 - D2 as a label (delayed flights affected by extreme weather, plus the ones for which NAS delay is greater than or equal to the delay threshold)
 - 60 min for the delay threshold
@@ -49,12 +49,12 @@ By grouping everything per airport (origin airport first, then doing the same fo
 It requires only two steps of communication (one group by origin then destination airports), and the join in memory was pretty fast
 (sorting the flights and weather data list by timestamp in O(log(N)), then iterating through the two lists using a "two pointers" approach in O(N)).
 The issue with this method is that for airports with big traffic, and with multiple years of data, memory limit can be reached in theory.
-Moreover the traffic per airport is not well balanced, so the computation time for the tasks would have been unbalanced too.
+Moreover, the traffic per airport is not well-balanced, so the computation time for the tasks would have been unbalanced too.
 
 ##### Multiple joins
-This approach (as well as the ones described below) requires to complete/deduplicate the weather data in order to have exactly one weather data per hour/airport.
+This approach (as well as the ones described below) requires completing/deduplicating the weather data in order to have exactly one weather data per hour/airport.
 After, one joins is done for each of the hours of weather data.
-This scales well in practice, but the it's quite expansive to do all these joins (24 joins for the setup with 12 hours of weather data).
+This scales well in practice, but it's quite expansive to do all these joins (24 joins for the setup with 12 hours of weather data).
 
 ##### Joining per airport
 The next step was then to join all the flights and weather data per airport, and filtering out the irrelevant weather data using the timestamps in the join conditions.
@@ -62,15 +62,15 @@ This is quite straightforward to do that in with spark dataframe, but the issue 
 
 ##### Joining per airport x day
 By joining the flight with the weather data by airport x day, the join is very efficient, and the irrelevant weather data could be filtered afterward.
-Since many flights have to be join with weather from the previous day, the weather data was duplicated before the join (on row for the current day and one row for the day before).
+Since many flights have to be joined with weather from the previous day, the weather data was duplicated before the join (on row for the current day and one row for the day before).
 Days were used, but any duration could have been used, as long as the duration were bigger than the number of hours of weather data to join per flight + the duration of the longest flight.
 This approach is fast, balanced, and scales well, so this was the one used in the end.
 
 #### Implementation details
-The approach for the join operation requires first to complete/deduplicate the weather data in order to have exactly one weather data per hour/airport.
+The approach for the join operation requires first to completing/deduplicating the weather data in order to have exactly one weather data per hour/airport.
 This is done by grouping all weather data per airport, then, in memory, sorting them in O(log(N)), and iterating over all required hours to output the last available weather data (in O(N)).
 
-Time zones were not handled explicitly in the code since no comparison of timestamp from two different time zone were done.
+Time zones were not handled explicitly in the code since no comparison of timestamp from two different time zones were done.
 
 ### Transformation pipeline
 
@@ -87,7 +87,7 @@ The model are evaluated using the following metrics:
 
 All metrics except Area under the ROC require a threshold to be chosen.
 It was selected using the value maximizing the F-score.
-Since the number of negatives and positives were balanced, it was equivalent to selecting the value maximizing the accuracy.
+Since the number of negatives and positives were balanced, it was equivalent to select the value maximizing the accuracy.
 
 Since the area under the ROC is usually less noisy than the other metrics (and has the nice property of being invariant to the positives/negatives ratio, although irrelevant for our case), it was the metric used for the model selection.
 
@@ -100,7 +100,7 @@ TODO explain the train / validation / test split
 #### Origin and destination airports
 
 The origin and destination airports of the flights are categorical features, fed to the model using a string indexer.
-Since the cardinality is quite high, some airports might have relatively few flights, the feature is too sparse, and the model might not have enough data to predict delays on these airport.
+Since the cardinality is quite high, some airports might have relatively few flights, the feature is too sparse, and the model might not have enough data to predict delays on these airports.
 To mitigate this issue the approach of using counters to encode the airports has been used.
 The counter used was the number of flights per airports.
 By using this counter as a feature column the model can learn and generalize well from low traffic airports.
@@ -116,9 +116,9 @@ One important piece of information that is not extracted easily by the GBDT is t
 
 #### Weather type
 
-The string is composed of several 2 characters substrings, each representing one type of weather ('RA': rain, 'SN': snow), with an optionnal character prefix ('-': light intensity, blank: Moderate intensity, '+' Heavy intensity)
+The string is composed of several 2 characters substrings, each representing one type of weather ('RA': rain, 'SN': snow), with an optional character prefix ('-': light intensity, blank: Moderate intensity, '+' Heavy intensity)
 https://en.wikipedia.org/wiki/METAR#METAR_WX_codes
-The data is data is split into several columns (one for each possible type of weather), with values equal to 0 if the it's absent, and the values of 1, 2, or 3 if present (respectively with a '-' prefix, no prefix, '+' prefix)
+The data is split into several columns (one for each possible type of weather), with values equal to 0 it's absent, and the values of 1, 2, or 3 if present (respectively with a '-' prefix, no prefix, '+' prefix)
 
 #### Sky condition
 
@@ -146,7 +146,7 @@ TODO garmadon screenshot
 
 ### Comparison with previous works
 
-We can compare the results we obtained with the from the paper which this project is based on **[Belcastro 2016]** and previous works (**[Rebollo and Balakrishnan 2014]** and **[FlightCaster 2009]**).
+We can compare the results we obtained with the ones from the paper which this project is based on **[Belcastro 2016]** and previous works (**[Rebollo and Balakrishnan 2014]** and **[FlightCaster 2009]**).
 
 |                | our work (training) | our work   | **[Belcastro 2016]** | **[Rebollo and Balakrishnan 2014]** | **[FlightCaster 2009]** |
 | -------------- | ------------------- | ---------- | -------------------- |------------------------------------ | ----------------------- |
@@ -157,7 +157,7 @@ We can compare the results we obtained with the from the paper which this projec
 | Accuracy       | 0.975               | 0.877      | 0.858                | 0.810                               |                         |
 
 We slightly improved the results with our implementation (by around 2% on the reported metrics).
-All the reported statistics on the datasets (total number of flight, number of delayed flights, etc) were the same than the ones reported in the paper, so the improvement might be attributed to feature engineering or the model itself.
+All the reported statistics on the datasets (total number of flight, number of delayed flights, etc) were the same as the ones reported in the paper, so the improvement might be attributed to feature engineering or the model itself.
 
 ### Feature importance analysis
 
@@ -173,7 +173,7 @@ Here are the results for the different way to define the target labels (D1 to D4
 
 The definition for the target labels are the ones defined in the paper:
 - D1 contains delayed flights due only to extreme weather or NAS, or a combination of them.
-- D2 includes delayed flights affected by extreme weather, plus those ones for which NAS delay is greater than or equal to the delay threshold.
+- D2 includes delayed flights affected by extreme weather, plus those for which NAS delay is greater than or equal to the delay threshold.
 - D3 includes delayed flights affected by extreme weather or NAS, even if not exclusively.
 - D4 contains all delayed flights.
 
@@ -229,5 +229,5 @@ Computing the differences from one hour to another for some weather data columns
 ### Cross features
 
 One drawback of GBDT is that they can't easily learn decision boundaries that involve more than one feature.
-The effect is that the learnt trees create some "stairs" pattern which is a bad use of the model capacity.
+The effect is that the learned trees create some "stairs" pattern which is a bad use of the model capacity.
 To avoid this, crossed features could be used, especially for features showing up in the feature importance analysis, since a "stairs" pattern mean a lot of splits for the two features.
