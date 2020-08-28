@@ -1,6 +1,6 @@
 # Predicting flight delays
 Victor Guerra <vm.guerramoran@criteo.com>
-Stephane Le Roy<s.leroy@criteo.com>
+Stephane Le Roy <s.leroy@criteo.com>
 
 ## Introduction
 In this report, we present the work done to implement a Machine Learning pipeline that trains a model that predicts delays in US Flights.
@@ -11,6 +11,8 @@ The results decribed below were obtained using the following setup (unless other
 - D2 as a label (delayed flights affected by extreme weather, plus those ones for which NAS delay is greater than or equal to the delay threshold)
 - 60 min for the delay threshold
 - 12 hours of weather data
+
+In this report positives will define as delayed flights and negatives as on-time flights.
 
 ## Implementation
 ### Reading datasets and preprocessing
@@ -29,10 +31,12 @@ This was the approach giving the best coverage and consistency compared to other
 Again reading the data on disk was not an significant part of the running time of the job, so the data was kept as a csv (not a more efficient format like parquet), without prefiltering only the relevant columns.
 
 TODO explain computeNextDayFactor
+
 TODO explain monotonically_increasing_id
 
 ### Negative subsampling
 The ratio for the negative subsampling was computed on the fly to ensure the balance of positives and negatives.
+
 This step was done as soon as possible since it greatly reduces the size of the dataset, especially for a 60 min threshold.
 
 ### Joining flights and weather data
@@ -90,34 +94,48 @@ Since the area under the ROC is usually less noisy than the other metrics (and h
 TODO explain the train / validation / test split
 
 ## Feature engineering
+
 ### Flight data features
+
 #### Origin and destination airports
+
 The origin and destination airports of the flights are categorical features, fed to the model using a string indexer.
 Since the cardinality is quite high, some airports might have relatively few flights, the feature is too sparse, and the model might not have enough data to predict delays on these airport.
 To mitigate this issue the approach of using counters to encode the airports has been used.
 The counter used was the number of flights per airports.
 By using this counter as a feature column the model can learn and generalize well from low traffic airports.
 Other counters than number of flights could have been used, including the labels, (this approach, -label encoding-, can sometime be very effective, but requires extra care to avoid leaking labels).
+
 #### Timestamp data
+
 The time of the flight can a very important feature for a delay prediction.
 Since the model that is used in the end is Gradient Boosted Decision Trees, the timestamp value in seconds can be used directly by the model without much preprocessing, no bucketization or scaling/normalization required (directly handled by the model).
 One important piece of information that is not extracted easily by the GBDT is the periodicity (yearly, weekly, daily periodicities). For this purpose other features has been built, DayOfYear, SecondOfDay and DayOfWeek.
+
 ### Weather data features
+
 #### Weather type
+
 The string is composed of several 2 characters substrings, each representing one type of weather ('RA': rain, 'SN': snow), with an optionnal character prefix ('-': light intensity, blank: Moderate intensity, '+' Heavy intensity)
 https://en.wikipedia.org/wiki/METAR#METAR_WX_codes
 The data is data is splitted into several columns (one for each possible type of weather), with values equal to 0 if the it's absent, and the values of 1, 2, or 3 if present (respectively with a '-' prefix, no prefix, '+' prefix)
+
 #### Sky condition
+
 The string is composed of several 6 characters substrings, each representing a type of cloud coverage at a given altitude.
 The 3 first characters represents the cloud coverage percentage (in oktas) (FEW: "Few" 1–2 oktas, SCT: "Scattered" 3–4 oktas, etc).
 The 3 last characters represents the altitude.
 https://en.wikipedia.org/wiki/METAR#Cloud_reporting
 The data is splitted into several columns (one for each possible coverage percentage), with values equal to the min altitude reported for this coverage, or the max altitude (999) if not reported.
+
 #### Visibility, Wind Speed, Wind Direction, Humidity and Pressure
+
 Since GBDT models are quite good at handling real values like these features, those were used directly without scaling/normalization or other preprocessing.
 The wind direction seemed to be an important feature for the model (according to the results of feature importance), which is not surprising: a plane has to face the wind to land, so this is a strong factor for flight delays.
 The values of wind direction are cyclic (a value of 359° is close to 0°) an attempt to encode it into the features has been done (by decomposing it into a 2D vector), but without significant improvements.
+
 #### Aggregation
+
 The weather data for the origin and destination airports are aggregated as lists of up to 12 structures containing the columns decribed above.
 Other aggregation schemes has been considered.
 Maximum/average/etc could be relevant for many weather conditions (if weather is bad enough to cause delay for an hour, the delay can accumulate and cause delay several hours later).
@@ -126,11 +144,22 @@ Differences from one hour to another could also be relevant in some case, like w
 ## Results
 
 ### Job performance
+
 TODO explain about spark parameters / partitionning / etc
 
-### Metrics comparaison with the paper
+### Comparaison with previous works
 
-TODO
+We can compare the results we obtained with the from the paper which this project is based on ([Belcastro 2016]) and previous works ([Rebollo and Balakrishnan 2014] and [FlightCaster 2009]).
+
+|                | our work (training) | our work   | [Belcastro 2016]    | [Rebollo and Balakrishnan 2014] | [FlightCaster 2009] |
+| -------------- | ------------------- | ---------- | ------------------- |-------------------------------- | ------------------- |
+| Area under ROC | 0.997               | 0.940      |                     |                                 |                     |
+| F-score        | 0.975               | 0.878      |                     |                                 |                     |
+| precision      | 0.976               | 0.871      |                     |                                 | 0.85                |
+| recall         | 0.974               | 0.886      | 0.869               | 0.764                           | 0.60                |
+| Accuracy       | 0.975               | 0.877      | 0.858               | 0.810                           |                     |
+
+We slightly improved the results (by around 2% on the reported metrics) with our implementation.
 
 ### Feature importance analysis
 
@@ -139,7 +168,40 @@ TODO
 ### Nb weather hours
 TODO
 
-### other labels (D1 to D4) / delay threshold (15 min / 60 min)
+### Other target labels and delay thresholds
+
+Here are the results for the different way to define the target labels (D1 to D4) and different values of delay threshold.
+
+The definition for the target labels are the ones defined in the paper:
+- D1 contains delayed flights due only to extreme weather or NAS, or a combination of them.
+- D2 includes delayed flights affected by extreme weather, plus those ones for which NAS delay is greater than or equal to the delay threshold.
+- D3 includes delayed flights affected by extreme weather or NAS, even if not exclusively.
+- D4 contains all delayed flights.
+
+For different threshold delays and target labels we obtained the same numbers of positives than the ones from the papers:
+| label | delay | delayed tuples |
+| ----- | ----- | -------------- |
+| D1    | 15    | 1.32M          |
+| D2    | 15    | 2.14M          |
+| D3    | 15    | 3.41M          |
+| D4    | 15    | 5.79M          |
+| D1    | 60    | 257k           |
+| D2    | 60    | 435k           |
+| D3    | 60    | 953k           |
+| D4    | 60    | 1.67M          |
+
+The results are also very close to the ones obtain in the paper:
+| label | delay | precision | recall | accuracy |
+| ----- | ----- | --------- | ------ | -------- |
+| D1    | 15    | 0.695     | 0.815  | 0.729    |
+| D2    | 15    | 0.720     | 0.812  | 0.752    |
+| D3    | 15    | 0.651     | 0.838  | 0.696    |
+| D4    | 15    | 0.571     | 0.829  | 0.620    |
+| D1    | 60    | 0.854     | 0.882  | 0.865    |
+| D2    | 60    | 0.871     | 0.886  | 0.877    |
+| D3    | 60    | 0.745     | 0.815  | 0.770    |
+| D4    | 60    | 0.655     | 0.804  | 0.693    |
+
 TODO
 
 ### model accuracy with more/less data (one month to 5 years)
