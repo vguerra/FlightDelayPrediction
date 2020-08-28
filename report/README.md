@@ -134,13 +134,6 @@ Since GBDT models are quite good at handling real values like these features, th
 The wind direction seemed to be an important feature for the model (according to the results of feature importance), which is not surprising: a plane has to face the wind to land, so this is a strong factor for flight delays.
 The values of wind direction are cyclic (a value of 359° is close to 0°) an attempt to encode it into the features has been done (by decomposing it into a 2D vector), but without significant improvements.
 
-#### Aggregation
-
-The weather data for the origin and destination airports are aggregated as lists of up to 12 structures containing the columns decribed above.
-Other aggregation schemes has been considered.
-Maximum/average/etc could be relevant for many weather conditions (if weather is bad enough to cause delay for an hour, the delay can accumulate and cause delay several hours later).
-Differences from one hour to another could also be relevant in some case, like wind direction, when the wind changing direction abruptly/frequently can change the flight plan for the landing.
-
 ## Results
 
 ### Job performance
@@ -149,17 +142,18 @@ TODO explain about spark parameters / partitionning / etc
 
 ### Comparaison with previous works
 
-We can compare the results we obtained with the from the paper which this project is based on ([Belcastro 2016]) and previous works ([Rebollo and Balakrishnan 2014] and [FlightCaster 2009]).
+We can compare the results we obtained with the from the paper which this project is based on **[Belcastro 2016]** and previous works (**[Rebollo and Balakrishnan 2014]** and **[FlightCaster 2009]**).
 
-|                | our work (training) | our work   | [Belcastro 2016]    | [Rebollo and Balakrishnan 2014] | [FlightCaster 2009] |
-| -------------- | ------------------- | ---------- | ------------------- |-------------------------------- | ------------------- |
-| Area under ROC | 0.997               | 0.940      |                     |                                 |                     |
-| F-score        | 0.975               | 0.878      |                     |                                 |                     |
-| precision      | 0.976               | 0.871      |                     |                                 | 0.85                |
-| recall         | 0.974               | 0.886      | 0.869               | 0.764                           | 0.60                |
-| Accuracy       | 0.975               | 0.877      | 0.858               | 0.810                           |                     |
+|                | our work (training) | our work   | **[Belcastro 2016]** | **[Rebollo and Balakrishnan 2014]** | **[FlightCaster 2009]** |
+| -------------- | ------------------- | ---------- | -------------------- |------------------------------------ | ----------------------- |
+| Area under ROC | 0.997               | 0.940      |                      |                                     |                         |
+| F-score        | 0.975               | 0.878      |                      |                                     |                         |
+| precision      | 0.976               | 0.871      |                      |                                     | 0.85                    |
+| recall         | 0.974               | 0.886      | 0.869                | 0.764                               | 0.60                    |
+| Accuracy       | 0.975               | 0.877      | 0.858                | 0.810                               |                         |
 
-We slightly improved the results (by around 2% on the reported metrics) with our implementation.
+We slightly improved the results with our implementation (by around 2% on the reported metrics).
+All the reported statistics on the datasets (total number of flight, number of delayed flights, etc) were the same than the ones reported in the paper, so the improvement might be attributed to feature emgineering or the model itself.
 
 ### Feature importance analysis
 
@@ -180,16 +174,17 @@ The definition for the target labels are the ones defined in the paper:
 
 For different threshold delays and target labels we obtained the same numbers of positives than the ones from the papers:
 
-| label | delay | delayed tuples |
-| ----- | ----- | -------------- |
-| D1    | 15    | 1.32M          |
-| D2    | 15    | 2.14M          |
-| D3    | 15    | 3.41M          |
-| D4    | 15    | 5.79M          |
-| D1    | 60    | 257k           |
-| D2    | 60    | 435k           |
-| D3    | 60    | 953k           |
-| D4    | 60    | 1.67M          |
+| label | delay | delayed tuples | reported in **[Belcastro 2016]** |
+| ----- | ----- | -------------- | -------------------------------- |
+| D1    | 15    | 1.32M          | 1.3M                             |
+| D2    | 15    | 2.14M          | 2.1M                             |
+| D3    | 15    | 3.41M          | 3.4M                             |
+| D4    | 15    | 5.79M          | 5.8M                             |
+| D1    | 60    | 257k           | 257k                             |
+| D2    | 60    | 435k           | 433k                             |
+| D3    | 60    | 953k           | 950k                             |
+| D4    | 60    | 1.67M          | 1.7M                             |
+
 
 The results are also very close to the ones obtain in the paper:
 
@@ -209,15 +204,17 @@ TODO
 ### model accuracy with more/less data (one month to 5 years)
 TODO
 
+## Other ideas of improvements
+
 ### Weather data aggregation, max, avg, etc
-TODO
+
+The weather data for the origin and destination airports are aggregated as lists of up to 12 structures containing the columns decribed above.
+Other aggregation schemes could be considered.
+For example maximum and/or average over all/some hours could be relevant for many weather conditions (if weather is bad enough to cause delay for an hour, the delay can accumulate and cause delay several hours later).
+Computing the differences from one hour to another for some weather conditions could also be relevant in some case, like wind direction, when the wind changing direction abruptly/frequently can change the flight plan for the landing.
 
 ### Cross features
+
 One drawback of GBDT is that they can't easily learn decision boundary that involve more than one feature.
 The effect is that the learnt trees create some "stairs" pattern which is a bad use of the model capacity.
 To avoid this, crossed features could be used, especially for features showing up in the feature importance analysis.
-TODO
-
-## Conclusion
-
-????
