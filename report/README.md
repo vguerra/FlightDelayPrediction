@@ -76,7 +76,18 @@ Time zones were not handled explicitly in the code since no comparison of timest
 
 ### Model training
 
+* We use XGBoost to train a Classifier, using the following Hyper Parameters:
+* Learning rate: 0.15
+* Depth of trees: 10
+
+A validation set for early stopping ( 10 steps ) is put in place, this way we can avoid overfitting the training set and generalize well on the test set. Hence we divide the totality of the data into: 70% training set, 20% validation set, 10% test set.
+
+As we can observe in the plots of Losses, the training process stops when the Loss on the validation set platoes:
+
+<img src="./images/12h/Losses.png" width="250" height="250"/>  
+
 ### Metrics and Validation
+
 The model are evaluated using the following metrics:
 - F-score
 - Precision
@@ -138,11 +149,26 @@ The values of wind direction are cyclic (a value of 359° is close to 0°) an at
 
 ### Job performance
 
-TODO running time
+### Running time
+
+The entire pipeline takes ~ 1h 15 min from end to end training on all 5 years of data.
 
 TODO explain about spark parameters / partitioning / etc
 
-TODO garmadon screenshot
+### Resources consumption
+
+We configured the job to use the following resource parameters:
+
+* Executors: 100
+* Executor memory: 2G
+* Extra executor memory (overhead): 2G (Extra space needed in HEAP for XGBoost library allocations).
+* Executor cores: 12
+* Driver memory: 3g
+* Driver cores: 12
+
+And we confirm the usage of the resources:
+
+![](./images/12h/Resources.png)
 
 ### Comparison with previous works
 
@@ -163,9 +189,29 @@ All the reported statistics on the datasets (total number of flight, number of d
 
 ## Experiments
 
-### Nb weather hours
+### Number of weather hours
 
-TODO do the experiment + put the results
+We experimented using different time windows for the weather data to merge with. We list the resulting metrics and some model characteristics on the test set using all 5 years of data, from 2009 to 2013.
+
+| Nb hours | Area under ROC | F-Score | Precision | Recall | Accuracy | nb trees |
+|----------|----------------|---------|-----------|--------|----------|----------|
+| 12       | 0.937          | 0.876   | 0.859     | 0.894  | 0.873    | 510      |
+| 6        | 0.934          | 0.872   | 0.852     | 0.894  | 0.868    | 547      |
+| 3        | 0.936          | 0.873   | 0.864     | 0.883  | 0.872    | 643      |
+| 0        | 0.928          | 0.862   | 0.855     | 0.870  | 0.860    | 755      |
+
+As you can see, the model adds more trees in order to make up for the missing data.
+
+As well, we computed feature importance for each of the settings described above:
+
+| Nb hours | Feature Importance                                                       |
+|----------|--------------------------------------------------------------------------|
+| 12       | <img src="./images/12h/FeatureImportance.png" width="250" height="250"/> |
+| 6        | <img src="./images/06h/FeatureImportance.png" width="250" height="250"/> |
+| 3        | <img src="./images/03h/FeatureImportance.png" width="250" height="250"/> |
+| 0        | <img src="./images/00h/FeatureImportance.png" width="250" height="250"/> |
+
+The model gives different importance to the set of features depending on the data available to it, which is to be expected.
 
 ### Other target labels and delay thresholds
 
@@ -231,3 +277,7 @@ Computing the differences from one hour to another for some weather data columns
 One drawback of GBDT is that they can't easily learn decision boundaries that involve more than one feature.
 The effect is that the learned trees create some "stairs" pattern which is a bad use of the model capacity.
 To avoid this, crossed features could be used, especially for features showing up in the feature importance analysis, since a "stairs" pattern mean a lot of splits for the two features.
+
+### Weather data from destination airport
+
+We noticed that the weather data used for the destination airport starts at the arrival time, but this seems counter intuitive, specially if the model is intended to be used for delay prediction. At the moment of inference in real time, the weather of the destination airport at arrival time is not available because it is in the future. Using weather data at the destination airport during departure would be the right thing to do.

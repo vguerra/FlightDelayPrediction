@@ -7,9 +7,9 @@ spark-submit --verbose --master yarn \
     --conf spark.driver.cores=12 \
     --conf spark.driver.memory=3g \
     --conf spark.executor.cores=12 \
-    --conf spark.executor.memoryOverhead=8g \
+    --conf spark.executor.memoryOverhead=2g \
     --num-executors 100 \
-    --executor-memory 4g \
+    --executor-memory 2g \
     --conf spark.yarn.submit.waitAppCompletion=false \
     --class FlightProject "${DIR}/target/scala-2.11/FlightProject-assembly-1.0.jar" \
     --dataDir "viewfs:///user/vm.guerramoran/flights_data/" \
