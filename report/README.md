@@ -33,7 +33,7 @@ This was the approach giving the best coverage and consistency compared to other
 
 Again reading the data on disk was not a significant part of the running time of the job, so the data was kept as a csv (not a more efficient format like parquet), without prefiltering only the relevant columns.
 
-TODO explain computeNextDayFactor
+For those flights for which the departure hour is close to midnight, it is very likely that the arrival date is on the next day, but this might not be true due to differences in timezones within the US, meaning that arrival date would be on the next day taking as reference departure timezone but it could as well be on the same date as departure, if the reference is the arrival timezone. For this reason, we added some preprocessing that makes sure to compute the correct arrival date and hour in the timezone of the arrival airport. This is important to merge the right weather data for the arrival airport.
 
 In order to ease debugging during we extended the Flight data with a `FlightSeqId` column using the spark sql function `monotonically_increasing_id` which simply creates 64-bit integers that monotonically increase.
 
