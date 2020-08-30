@@ -47,7 +47,9 @@ This step was done as soon as possible since it greatly reduces the size of the 
 Several alternatives have been tested for the join of the flights and weather data:
 
 #### Alternatives
+
 ##### Group everything by airport
+
 By grouping everything per airport (origin airport first, then doing the same for the destination airport) and doing the joins in memory, it was much faster in theory.
 It requires only two steps of communication (one group by origin then destination airports), and the join in memory was pretty fast
 (sorting the flights and weather data list by timestamp in O(log(N)), then iterating through the two lists using a "two pointers" approach in O(N)).
@@ -79,15 +81,19 @@ Time zones were not handled explicitly in the code since no comparison of timest
 
 ### Model training
 
-* We use XGBoost to train a Classifier, using the following Hyper Parameters:
-* Learning rate: 0.15
-* Depth of trees: 10
+To train our classifier we use XGBoost, which is a distributed gradient boosting library that runs on distributed environmentes providing parallel tree boosting implementations. The library is seamlessly integrated into Apache Spark by fitting XGBoost to the MLLIB Framework.
 
-A validation set for early stopping ( 10 steps ) is put in place, this way we can avoid overfitting the training set and generalize well on the test set. Hence we divide the totality of the data into: 70% training set, 20% validation set, 10% test set.
+#### Other alternatives
 
-As we can observe in the plots of Losses, the training process stops when the Loss on the validation set platoes:
+We decided to use XGBoost due to its speed during training, specially when handling big datasets, as well as extra features provided out of the box like early stopping.
 
-<img src="./images/12h/Losses.png" width="250" height="250"/>  
+Among other alternatives tested during development:
+
+* Logistic regression (`LogisticRegression`)
+* Gradient Boosted Tree classifier (`GBTClassifier`)
+* Decision Tree classifier (`DecisionTreeClassifier`)
+
+To train our classifier we used a depth of 10 for the trees as experiments showed that this depth is enough to capture relations among columns in the dataset at hand. As well, a learning rate of 0.15 showed to be a good compromise between how fast the algorithm learns and the resulting number of trees in the forest. A smaller learning rate implies a forest with more trees to reach the same values for the Loss function.
 
 ### Metrics and Validation
 
@@ -99,13 +105,16 @@ The model are evaluated using the following metrics:
 - Confusion matrix
 - Area under the ROC
 
-All metrics except Area under the ROC require a threshold to be chosen.
-It was selected using the value maximizing the F-score.
+All metrics except Area under the ROC require a threshold to be chosen. It was selected using the value maximizing the F-score.
 Since the number of negatives and positives were balanced, it was equivalent to select the value maximizing the accuracy.
 
 Since the area under the ROC is usually less noisy than the other metrics (and has the nice property of being invariant to the positives/negatives ratio, although irrelevant for our case), it was the metric used for the model selection.
 
-TODO explain the train / validation / test split
+A validation set for early stopping ( 10 steps ) is put in place, this way we can avoid overfitting the training set and generalize well on the test set. Hence we divide the totality of the data into: 70% training set, 20% validation set, 10% test set.
+
+As we can observe in the plots of Losses, the training process stops when the Loss on the validation set platoes:
+
+<img src="./images/12h/Losses.png" width="250" height="250"/>
 
 ## Feature engineering
 
