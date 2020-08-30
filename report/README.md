@@ -163,7 +163,11 @@ The values of wind direction are cyclic (a value of 359° is close to 0°) an at
 
 ### Running time
 
-The entire pipeline takes ~ 1h 15 min from end to end training on all 5 years of data.
+The entire pipeline takes ~ 1h 20 min from end to end training on all 5 years of data using 12 hours of weather data. If we use no weather data, the execution time is reduced to only 20 mins.
+
+75% of the time is spent on training the classifier. Producing the final dataset for training takes 24% of the total time, this includes reading the data, applying all preprocessing, merging the raw datasets into one and post processing it for training. The remaing 1% is used to compute evaluation metrics.
+
+<img src="./images/timeline.png" height="250"/>
 
 TODO explain about spark parameters / partitioning / etc
 
