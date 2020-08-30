@@ -81,7 +81,7 @@ Time zones were not handled explicitly in the code since no comparison of timest
 
 ### Model training
 
-To train our classifier we use XGBoost, which is a distributed gradient boosting library that runs on distributed environmentes providing parallel tree boosting implementations. The library is seamlessly integrated into Apache Spark by fitting XGBoost to the MLLIB Framework.
+To train our classifier we use XGBoost, which is a distributed gradient boosting library that runs on distributed environments providing parallel tree boosting implementations. The library is seamlessly integrated into Apache Spark by fitting XGBoost to the MLLIB Framework.
 
 #### Other alternatives
 
@@ -112,7 +112,7 @@ Since the area under the ROC is usually less noisy than the other metrics (and h
 
 A validation set for early stopping ( 10 steps ) is put in place, this way we can avoid overfitting the training set and generalize well on the test set. Hence we divide the totality of the data into: 70% training set, 20% validation set, 10% test set.
 
-As we can observe in the plots of Losses, the training process stops when the Loss on the validation set platoes:
+As we can observe in the plots of Losses, the training process stops when the Loss on the validation set plateaus:
 
 <img src="./images/12h/Losses.png" width="250" height="250"/>
 
@@ -292,7 +292,7 @@ Computing the differences from one hour to another for some weather data columns
 
 One drawback of GBDT is that they can't easily learn decision boundaries that involve more than one feature.
 The effect is that the learned trees create some "stairs" pattern which is a bad use of the model capacity.
-To avoid this, crossed features could be used, especially for features showing up in the feature importance analysis, since a "stairs" pattern mean a lot of splits for the two features.
+To avoid this, crossed features could be used, especially for features showing up in the feature importance analysis, since a "stairs" pattern means a lot of splits for the two features.
 
 ### Weather data from destination airport
 
