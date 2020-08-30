@@ -15,9 +15,11 @@ The results described below were obtained using the following setup (unless othe
 In this report positives will define as delayed flights and negatives as on-time flights.
 
 ## Implementation
+
 ### Reading datasets and preprocessing
 
 #### Weather data
+
 Reading the data on disk was not a significant part of the running time of the job, so the data was kept as a csv (not a more efficient format like parquet), without prefiltering only the relevant columns.
 
 One small optimization was to filter the weather data by keeping only the one with airport present the flights data. Since only a small part of the weather stations are close to an airport, so the other are irrelevant for the task.
@@ -28,11 +30,12 @@ This was the approach giving the best coverage and consistency compared to other
 - using data from http://www.weather2000.com/1st_order_wbans.txt
 
 #### Flight data
+
 Again reading the data on disk was not a significant part of the running time of the job, so the data was kept as a csv (not a more efficient format like parquet), without prefiltering only the relevant columns.
 
 TODO explain computeNextDayFactor
 
-TODO explain monotonically_increasing_id
+In order to ease debugging during we extended the Flight data with a `FlightSeqId` column using the spark sql function `monotonically_increasing_id` which simply creates 64-bit integers that monotonically increase.
 
 ### Negative subsampling
 The ratio for the negative subsampling was computed on the fly to ensure the balance of positives and negatives.
