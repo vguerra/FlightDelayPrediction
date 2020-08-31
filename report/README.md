@@ -35,9 +35,10 @@ Again reading the data on disk was not a significant part of the running time of
 
 For those flights for which the departure hour is close to midnight, it is very likely that the arrival date is on the next day, but this might not be true due to differences in timezones within the US, meaning that arrival date would be on the next day taking as reference departure timezone but it could as well be on the same date as departure, if the reference is the arrival timezone. For this reason, we added some preprocessing that makes sure to compute the correct arrival date and hour in the timezone of the arrival airport. This is important to merge the right weather data for the arrival airport.
 
-In order to ease debugging during we extended the Flight data with a `FlightSeqId` column using the spark sql function `monotonically_increasing_id` which simply creates 64-bit integers that monotonically increase.
+In order to ease debugging during we extended the Flight data with a `FlightSeqId` column using the spark sql function `monotonically_increasing_id` which simply creates 64-bit integers that monotonically increases.
 
 ### Negative subsampling
+
 The ratio for the negative subsampling was computed on the fly to ensure the balance of positives and negatives.
 
 This step was done as soon as possible since it greatly reduces the size of the dataset, especially for a 60 min threshold.
@@ -77,7 +78,10 @@ This is done by grouping all weather data per airport, then, in memory, sorting 
 
 Time zones were not handled explicitly in the code since no comparison of timestamp from two different time zones were done.
 
-### Transformation pipeline
+### Dataset split
+
+We used a training, validation (for early stopping) and test sets (with respectively 70%, 20%, and 10% of the data).
+In order to stick to the paper we split randomly the flights, but the flight delays are not completely independant, so other split schemes could have been considered.
 
 ### Model training
 
@@ -163,13 +167,11 @@ The values of wind direction are cyclic (a value of 359° is close to 0°) an at
 
 ### Running time
 
-The entire pipeline takes ~ 1h 20 min from end to end training on all 5 years of data using 12 hours of weather data. If we use no weather data, the execution time is reduced to only 20 mins.
+The entire pipeline takes ~ 35 min from end to end training on all 5 years of data using 12 hours of weather data. If we use no weather data, the execution time is reduced to only 15 mins.
 
-75% of the time is spent on training the classifier. Producing the final dataset for training takes 24% of the total time, this includes reading the data, applying all preprocessing, merging the raw datasets into one and post processing it for training. The remaing 1% is used to compute evaluation metrics.
+68% of the time is spent on training the classifier. Producing the final dataset for training takes 28% of the total time, this includes reading the data, applying all preprocessing, merging the raw datasets into one and post processing it for training. The remaing 4% is used to compute evaluation metrics.
 
 <img src="./images/timeline.png" height="250"/>
-
-TODO explain about spark parameters / partitioning / etc
 
 ### Resources consumption
 
@@ -184,7 +186,7 @@ We configured the job to use the following resource parameters:
 
 And we confirm the usage of the resources:
 
-![](./images/12h/Resources.png)
+![](./images/Resources.png)
 
 ### Comparison with previous works
 
@@ -275,9 +277,27 @@ Results for different threshold delays:
 
 Again the values we obtain are very close to the one reported in the paper (Fig. 9), and around 1% to 2% better.
 
-### model accuracy with more/less data (one month to 5 years)
+### Dataset size impact on model accuracy
 
-TODO do the experiment + put the results
+By changing the size of the dataset, using from 1 month of data to the full years we can analyze the impact on the model accuracy.
+
+| Dataset size | precision | recall | accuracy |
+| ------------ | --------- | ------ | -------- |
+| 1 month      | 0.862     | 0.872  | 0.865    |
+| 2 months     | 0.886     | 0.902  | 0.894    |
+| 4 months     | 0.888     | 0.895  | 0.893    |
+| 8 months     | 0.870     | 0.897  | 0.881    |
+| 1 year       | 0.873     | 0.891  | 0.882    |
+| 2 years      | 0.869     | 0.901  | 0.883    |
+| 3 years      | 0.865     | 0.910  | 0.884    |
+| 4 years      | 0.870     | 0.890  | 0.877    |
+| 5 years      | 0.871     | 0.886  | 0.877    |
+
+We could have expected better performance for bigger dataset, but appart from maybe for 1 month only, it doesn't seem to be the case, it's maybe even the opposite.
+Several explanations are possible for this:
+- The diminushing returns of using bigger dataset is already way small compared to the noise/variability of the results.
+- The delayed flights are easier to predict during the months/years
+- Hyperparameters of the model are not optimal for big datasets (although they were selected using the 5 years dataset)
 
 ## Other ideas of improvements
 
